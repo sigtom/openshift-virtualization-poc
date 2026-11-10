@@ -1,0 +1,9 @@
+# Keep local tailoring and private evidence outside source.
+private/
+.local/
+*.kubeconfig
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc

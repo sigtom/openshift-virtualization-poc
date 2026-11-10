@@ -1,0 +1,44 @@
+# 05e - ONLY for a cluster where the Kube Descheduler Operator is installed but
+#       no KubeDescheduler object exists:
+#         oc get kubedescheduler cluster -n openshift-kube-descheduler-operator
+#         -> Error from server (NotFound)
+#
+# If the object exists, do NOT use this file: use the guarded patches 05a-05d,
+# and never delete or re-create an existing KubeDescheduler.
+#
+# Create with `oc create` (fails safely if someone created one meanwhile) and
+# record the UID (RUNBOOK 7.2). Cleanup deletes it only if the UID still matches.
+#
+# Same values as 05a, so 05b's guards accept it:
+#   - LongLifecycle + devEnableEvictionsInBackground: the virt-compatible
+#     fallback named in the HCOMisconfiguredDescheduler runbook and the 4.21
+#     virtualization docs (no PSI needed);
+#   - AffinityAndTaints: RemovePodsViolatingNodeAffinity (the tested trigger);
+#   - thresholdPriority -999999999: only pods below it (the reserved class) are
+#     evictable - LongLifecycle's LowNodeUtilization ignores the namespace include;
+#   - lab namespace include, one eviction per node and in total, Predictive.
+apiVersion: operator.openshift.io/v1
+kind: KubeDescheduler
+metadata:
+  name: cluster
+  namespace: openshift-kube-descheduler-operator
+  labels:
+    scheduling-lab: client-demo
+spec:
+  managementState: Managed
+  mode: Predictive
+  deschedulingIntervalSeconds: 30
+  profiles:
+    - AffinityAndTaints
+    - LongLifecycle
+    - EvictPodsWithLocalStorage
+    - EvictPodsWithPVC
+  profileCustomizations:
+    devEnableEvictionsInBackground: true
+    thresholdPriority: -999999999
+    namespaces:
+      included:
+        - virt-scheduling-lab
+  evictionLimits:
+    node: 1
+    total: 1

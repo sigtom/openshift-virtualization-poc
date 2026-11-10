@@ -1,38 +1,17 @@
-# Repository Template
+# OpenShift Virtualization POC test cases
 
-Private bootstrap template for new `sigtom` repositories using the repository-first Codex contract.
+Hands-on demonstrations for VMware/vCenter teams evaluating OpenShift Virtualization.
 
-This repository provides the minimum structure for a fresh project:
+Each numbered case provides generic YAML, web console steps, equivalent CLI commands, expected results, and reset/cleanup instructions. Select approved workers and tailor the documented storage/boot-source values for your POC cluster before applying a case.
 
-- concise root `AGENTS.md` startup instructions;
-- `docs/development.md` and `docs/security.md`;
-- `.repo-contract.yml` repository policy declaration;
-- `scripts/check_repository_contract.py` structural policy validation;
-- a self-hosted reusable GitHub Actions contract workflow;
-- `docs/ci-efficiency.md` CI efficiency baseline and rollout recipe;
-- a tiny local caller workflow suitable for repositories created from this template.
+| Test case | Covers | Status |
+| --- | --- | --- |
+| [01 — Scheduling and migration](test-cases/01-scheduling-and-migration/) | Approved host placement, VM spreading, an impossible rule, manual live migration, and policy-driven descheduler migration | CLI lab validation passed; web UI/video pending presenter verification |
 
-The template is intentionally generic. New repositories must replace placeholder project facts with repository-specific purpose, validation commands, branch model, security boundaries, and live-mutation boundaries before feature implementation begins.
+The first case targets OpenShift 4.21.31. The lab runs 4.22.11, so lab results do not certify the client version. Run the case's version/operator/schema/storage checks on the client first.
 
-## Default branch model
+The required test uses the documented LongLifecycle/background-eviction path. It does not require a PSI MachineConfig rollout. CPU-load-aware balancing is a separate optional topic.
 
-The template defaults to:
+Start with the case README and [walkthrough](test-cases/01-scheduling-and-migration/RUNBOOK.md). Apply only the file named in each step; never apply the repository recursively. These are POC examples, not an automatically synchronized GitOps deployment.
 
-```text
-work branch -> dev -> explicit literal dev -> main
-```
-
-Projects that intentionally use direct-to-`main` or imported/upstream-mirror models must update `.repo-contract.yml`, `AGENTS.md`, and `docs/development.md` together.
-
-## CI rule
-
-GitHub Actions execution must use self-hosted/local runners only. GitHub-hosted labels such as `ubuntu-latest`, `windows-latest`, and `macos-latest` are prohibited.
-
-## Validate
-
-```sh
-python3 scripts/check_repository_contract.py
-python3 -m unittest tests/test_check_repository_contract.py
-```
-
-The check is structural; repository-specific tests remain owned by each generated repository.
+This public repository intentionally uses a single main branch and no CI. Keep client names, cluster endpoints, credentials, and raw environment evidence out of source. Video links will be added after presenter review.

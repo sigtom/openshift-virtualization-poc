@@ -1,0 +1,29 @@
+# 04 - OPTIONAL diagnostic: manual live migration of placement-01
+#      (VMware analogue: a manual vMotion).
+#
+# NOT part of manifests/ on purpose: creating this object starts a migration
+# immediately. Never include it in a directory apply.
+#
+# This proves the VM, RWX root disk, network and node pair CAN live-migrate. It is NOT
+# descheduler evidence: here a human asked for the move. Step 05 is the
+# policy-driven test, and it must not use this file.
+#
+# Before creating it, a second node must also be eligible, otherwise there is
+# nowhere to go (the VM is never pinned to a single hostname):
+#   oc label node "$NODE_B" scheduling-lab.example.com/eligible=true
+#
+# Console equivalent: VirtualMachines > placement-01 > Actions > Migrate > Compute.
+#
+# Create (use create, not apply; the name must be new each run):
+#   oc create -f actions/04-manual-migration.yaml
+# For a re-run, delete the old object only once its phase is Succeeded or
+# Failed (RUNBOOK 9), or change the name.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstanceMigration
+metadata:
+  name: placement-01-manual-01
+  namespace: virt-scheduling-lab
+  labels:
+    scheduling-lab: client-demo
+spec:
+  vmiName: placement-01

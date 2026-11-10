@@ -1,0 +1,14 @@
+# 00 - Lab namespace.
+#
+# The namespace must not exist before this test (RUNBOOK 1.4). Record its UID
+# right after creation; cleanup deletes it only when the UID still matches.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: virt-scheduling-lab
+  labels:
+    scheduling-lab: client-demo
+  annotations:
+    openshift.io/description: >-
+      Disposable OpenShift Virtualization placement / descheduler POC lab.
+      Holds persistent RHEL root disks (PVCs) that cleanup deletes explicitly.
