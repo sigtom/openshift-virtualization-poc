@@ -1,0 +1,114 @@
+# 03 - negative-01: an impossible placement rule must be refused visibly.
+#
+# Same rhel9-server-small basis as 01-placement-vm.yaml (read its header).
+# BEFORE APPLYING: replace REPLACE_WITH_RWX_STORAGE_CLASS.
+#
+# When started, the launcher pod stays Pending and the scheduler emits
+# FailedScheduling ("didn't match Pod's node affinity/selector"). Never label
+# any node scheduling-lab.example.com/unsatisfiable. Halt it again after
+# capturing the event.
+#
+# Its root disk still clones (40Gi) so the VM is a normal, startable VM; only
+# the placement rule is impossible. With a WaitForFirstConsumer StorageClass the
+# clone never starts, because no node can ever be selected - also acceptable.
+#
+# No priorityClassName: default priority 0, protected from the lab descheduler.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: negative-01
+  namespace: virt-scheduling-lab
+  labels:
+    scheduling-lab: client-demo
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: negative-01-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS
+          accessModes:
+            - ReadWriteMany
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 40Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        scheduling-lab: client-demo
+        cohort: negative
+        kubevirt.io/domain: negative-01
+        kubevirt.io/size: small
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  # Deliberately unsatisfiable: no node may carry this label.
+                  - key: scheduling-lab.example.com/unsatisfiable
+                    operator: In
+                    values:
+                      - "true"
+      evictionStrategy: LiveMigrate
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: negative-01-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: negative-01
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  gecos: POC console user (unprivileged)
+                  lock_passwd: true
+                  shell: /bin/bash
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]

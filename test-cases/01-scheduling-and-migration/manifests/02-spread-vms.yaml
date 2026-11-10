@@ -1,0 +1,354 @@
+# 02 - spread-01..03: approved pool + VM-VM anti-affinity.
+#
+# Same rhel9-server-small basis as 01-placement-vm.yaml (read its header).
+# BEFORE APPLYING: replace REPLACE_WITH_RWX_STORAGE_CLASS (three occurrences).
+#
+# Approved pool = nodes labelled scheduling-lab.example.com/spread-pool=true
+# (a separate label from step 01). Hard podAntiAffinity on cohort=spread +
+# kubernetes.io/hostname: no two spread VMs on one node. Needs 3 pool nodes
+# with headroom; with only 2 the third VM stays Pending (the rule working).
+# Placement test only: with 3 VMs on 3 pool nodes there is no free pool node
+# to migrate to.
+#
+# No priorityClassName: launcher pods get the default priority 0, which is
+# above the lab thresholdPriority, so the lab descheduler config never evicts them.
+#
+# All Halted; wait for the three root-disk clones before starting (RUNBOOK 2.4).
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: spread-01
+  namespace: virt-scheduling-lab
+  labels:
+    scheduling-lab: client-demo
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: spread-01-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS
+          accessModes:
+            - ReadWriteMany
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 40Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        scheduling-lab: client-demo
+        cohort: spread
+        kubevirt.io/domain: spread-01
+        kubevirt.io/size: small
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: scheduling-lab.example.com/spread-pool
+                    operator: In
+                    values:
+                      - "true"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  cohort: spread
+              topologyKey: kubernetes.io/hostname
+      evictionStrategy: LiveMigrate
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: spread-01-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: spread-01
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  gecos: POC console user (unprivileged)
+                  lock_passwd: true
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin cloud-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: spread-02
+  namespace: virt-scheduling-lab
+  labels:
+    scheduling-lab: client-demo
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: spread-02-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS
+          accessModes:
+            - ReadWriteMany
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 40Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        scheduling-lab: client-demo
+        cohort: spread
+        kubevirt.io/domain: spread-02
+        kubevirt.io/size: small
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: scheduling-lab.example.com/spread-pool
+                    operator: In
+                    values:
+                      - "true"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  cohort: spread
+              topologyKey: kubernetes.io/hostname
+      evictionStrategy: LiveMigrate
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: spread-02-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: spread-02
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  gecos: POC console user (unprivileged)
+                  lock_passwd: true
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin cloud-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: spread-03
+  namespace: virt-scheduling-lab
+  labels:
+    scheduling-lab: client-demo
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: spread-03-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS
+          accessModes:
+            - ReadWriteMany
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 40Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        scheduling-lab: client-demo
+        cohort: spread
+        kubevirt.io/domain: spread-03
+        kubevirt.io/size: small
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: scheduling-lab.example.com/spread-pool
+                    operator: In
+                    values:
+                      - "true"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  cohort: spread
+              topologyKey: kubernetes.io/hostname
+      evictionStrategy: LiveMigrate
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: spread-03-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: spread-03
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  gecos: POC console user (unprivileged)
+                  lock_passwd: true
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin cloud-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]

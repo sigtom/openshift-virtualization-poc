@@ -1,0 +1,9 @@
+[
+  {"op": "test", "path": "/metadata/resourceVersion", "value": "__RESOURCE_VERSION__"},
+  {"op": "test", "path": "/spec/mode", "value": "Predictive"},
+  {"op": "test", "path": "/spec/deschedulingIntervalSeconds", "value": 30},
+  {"op": "test", "path": "/spec/profiles", "value": ["AffinityAndTaints", "LongLifecycle", "EvictPodsWithLocalStorage", "EvictPodsWithPVC"]},
+  {"op": "test", "path": "/spec/profileCustomizations", "value": {"devEnableEvictionsInBackground": true, "thresholdPriority": -999999999, "namespaces": {"included": ["virt-scheduling-lab"]}}},
+  {"op": "test", "path": "/spec/evictionLimits", "value": {"node": 1, "total": 1}},
+  {"op": "replace", "path": "/spec/mode", "value": "Automatic"}
+]

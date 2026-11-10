@@ -1,0 +1,147 @@
+# 01 - placement-01: approved-node placement and the descheduler test VM.
+#
+# Basis: the OpenShift Virtualization common template "rhel9-server-small"
+# (1 socket / 1 core / 1 thread, 2Gi guest, SMM + EFI boot, virtio disks and
+# NIC, RNG device, masquerade pod network, root disk cloned from the
+# DataSource rhel9 in openshift-virtualization-os-images). Changes from the
+# template: RWX storage class + 40Gi disk (live migration needs RWX),
+# LiveMigrate eviction, placement rule, reserved PriorityClass, and a
+# credential-free cloud-init instead of the template's generated password.
+#
+# BEFORE APPLYING: replace REPLACE_WITH_RWX_STORAGE_CLASS with the client's
+# ReadWriteMany Filesystem StorageClass (RUNBOOK 2.3).
+#
+# Starts Halted. The root-disk DataVolume may start cloning as soon as the VM
+# exists (or on first start with a WaitForFirstConsumer StorageClass); wait for
+# it to be Succeeded / its PVC Bound before starting (RUNBOOK 2.4).
+# Start: console Actions > Start, or
+#   oc patch vm placement-01 -n virt-scheduling-lab --type merge -p '{"spec":{"runStrategy":"Always"}}'
+#
+# Placement: the requiredDuringScheduling nodeAffinity on
+# scheduling-lab.example.com/eligible=true is what the descheduler strategy
+# RemovePodsViolatingNodeAffinity checks (a nodeSelector alone is not).
+#
+# Priority: priorityClassName virt-scheduling-lab-evictable (value -1000000000)
+# puts this VM's launcher pod below the lab thresholdPriority (-999999999), so
+# with the required clean inventory and exclusive class use, it is the only
+# intended eviction candidate. Force-evict annotations bypass that filter. Create the
+# PriorityClass first (priorityclass/), or the VM cannot start.
+#
+# Root disk is PERSISTENT: guest changes survive stop/start; boot_id changes on
+# every boot (so compare boot_id only across a live migration, never a restart).
+#
+# Console convenience (POC only, not a production guest policy): the serial
+# console auto-logs in as unprivileged cloud-user (no sudo, no password, root
+# and SSH password login disabled). Anyone allowed to open this VM's console
+# (RBAC: virtualmachineinstances/console) gets that shell.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: placement-01
+  namespace: virt-scheduling-lab
+  labels:
+    scheduling-lab: client-demo
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: placement-01-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS
+          accessModes:
+            - ReadWriteMany
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 40Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        scheduling-lab: client-demo
+        cohort: placement
+        kubevirt.io/domain: placement-01
+        kubevirt.io/size: small
+    spec:
+      architecture: amd64
+      priorityClassName: virt-scheduling-lab-evictable
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: scheduling-lab.example.com/eligible
+                    operator: In
+                    values:
+                      - "true"
+      evictionStrategy: LiveMigrate
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: placement-01-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            # Explicit users list (no "default" entry): the image's default
+            # cloud-user would get passwordless sudo; this one gets none.
+            # qemu-guest-agent ships in the RHEL image; it is only enabled here,
+            # nothing is installed or updated (no repository/network needed).
+            userData: |
+              #cloud-config
+              hostname: placement-01
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  gecos: POC console user (unprivileged)
+                  lock_passwd: true
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin cloud-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]

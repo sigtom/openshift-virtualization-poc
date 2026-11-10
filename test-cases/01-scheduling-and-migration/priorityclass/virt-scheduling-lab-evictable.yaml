@@ -1,0 +1,31 @@
+# Reserved PriorityClass for the descheduler test (cluster-scoped).
+#
+# Why: the descheduler profile LongLifecycle enables LowNodeUtilization, and
+# that strategy IGNORES profileCustomizations.namespaces.included. The hard
+# priority filter used with the required clean inventory is
+#   profileCustomizations.thresholdPriority: -999999999
+# Pods at/above the threshold are protected by this filter. Force-evict
+# annotations bypass it; missing priorities and reserved-class reuse outside
+# the lab are forbidden by the preflight. Only placement-01 gets this class.
+#
+# Create explicitly, never via a directory apply (RUNBOOK 2.2):
+#   oc get priorityclass virt-scheduling-lab-evictable   # must be NotFound
+#   oc create -f priorityclass/virt-scheduling-lab-evictable.yaml
+# Record its UID; delete it at cleanup only if the UID still matches and no
+# pod uses it. Never reuse a class of this name that you did not create.
+#
+# preemptionPolicy Never: pods of this class never preempt anything.
+# globalDefault false: no other pod ever gets this class implicitly.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: virt-scheduling-lab-evictable
+  labels:
+    scheduling-lab: client-demo
+value: -1000000000
+globalDefault: false
+preemptionPolicy: Never
+description: >-
+  Disposable descheduler POC only. Below the lab KubeDescheduler
+  thresholdPriority (-999999999). Assigned only to placement-01; requires
+  the runbook inventory and force-eviction-annotation checks.
