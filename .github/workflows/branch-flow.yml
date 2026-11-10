@@ -1,0 +1,29 @@
+name: branch-flow
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-flow-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || format('run-{0}-{1}', github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  branch-flow:
+    runs-on: arc-repo-template-ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Enforce configured branch flow
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: python3 scripts/check_repository_contract.py --branch-flow "${HEAD_REF}" "${BASE_REF}"

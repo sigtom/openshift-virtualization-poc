@@ -1,0 +1,15 @@
+name: repository-contract
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    uses: ./.github/workflows/repository-contract-reusable.yml
