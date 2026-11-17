@@ -1,0 +1,56 @@
+# Case 02 - FENCING LAB: NOT TESTED. Shipped PAUSED on purpose.
+#
+# pauseRequests stops NEW remediations only; in-flight ones keep running.
+# While paused, NHC (reference v0.12.0) reports observed/healthy 0/0 and also
+# skips cleanup of remediation objects for healthy nodes. Do not read health
+# counts while paused; check the nodes directly (ADMIN-GUIDE).
+# Remove the pause ONLY at RUNBOOK step 5, after ADMIN-GUIDE gates 1-7.
+# Verify activation gate 8 before introducing the fault.
+#
+# Selector: worker nodes only (never control plane) AND the explicit case pool
+# label. Exactly two nodes may carry the label (SOURCE and TARGET).
+#
+# minHealthy: 1 with a 2-node pool means "remediate while at least 1 pool node
+# is healthy" (N-1). A percentage such as 51% would round up to 2 and block
+# remediation. This is the documented adjustment for a 2-node pool.
+#
+# unhealthyConditions: Ready False or Unknown for 300s (conservative, to avoid
+# fencing for a brief blip). Not a recovery-time promise.
+#
+# Before applying, confirm no other NodeHealthCheck, MachineHealthCheck or
+# auto-remediation selects these two nodes (ADMIN-GUIDE "Ownership check").
+# Check the installed schema: oc explain nodehealthcheck.spec
+apiVersion: remediation.medik8s.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: case02-host-recovery
+  labels:
+    host-recovery-lab.example.com/case: "02"
+spec:
+  pauseRequests:
+    - case02-setup-hold
+  minHealthy: 1
+  selector:
+    matchExpressions:
+      - key: node-role.kubernetes.io/worker
+        operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
+      - key: node-role.kubernetes.io/master
+        operator: DoesNotExist
+      - key: host-recovery-lab.example.com/pool
+        operator: In
+        values:
+          - "case02"
+  unhealthyConditions:
+    - type: Ready
+      status: "False"
+      duration: 300s
+    - type: Ready
+      status: Unknown
+      duration: 300s
+  remediationTemplate:
+    apiVersion: fence-agents-remediation.medik8s.io/v1alpha1
+    kind: FenceAgentsRemediationTemplate
+    name: case02-far-redfish-reboot
+    namespace: openshift-workload-availability
