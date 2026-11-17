@@ -1,136 +1,47 @@
-# Test case 01 - VM placement, spreading and descheduler-driven live migration
+# Test 01: VM placement and migration
 
-A disposable OpenShift Virtualization POC for VMware/vCenter administrators.
-It uses Red Hat Enterprise Linux 9 VMs built from the `rhel9-server-small`
-common template, persistent RWX root disks, and a descheduler configuration
-taken from Red Hat's guidance for virtualization.
+For VMware/vCenter teams learning OpenShift Virtualization.
 
-| Test | Scope |
-|---|---|
-| 01 Placement on approved nodes | required |
-| 02 Spread across an approved pool (VM-VM anti-affinity) | required |
-| 03 Impossible rule refused with `FailedScheduling` | required |
-| 05 Descheduler evicts a rule-violating VM -> live migration, guest keeps running | required |
-| 04 Manual live migration | optional diagnostic, never descheduler evidence |
-| CPU/load-aware balancing | optional, not run ([OPTIONAL-CPU-AWARE.md](OPTIONAL-CPU-AWARE.md)) |
+You will use prepared RHEL 9 VMs to try five things: approved-host placement,
+VM separation, an impossible rule, manual live migration, and automatic
+correction of a placement-rule violation.
 
-Procedure: [RUNBOOK.md](RUNBOOK.md). Every stage gives the console (web UI)
-step, then the CLI equivalent, then the expected result in both.
-Recording plan: [VIDEO-OUTLINE.md](VIDEO-OUTLINE.md). Results: [RESULTS-TEMPLATE.md](RESULTS-TEMPLATE.md).
+## Choose your guide
 
-## Status
+| Your role | Open this |
+| --- | --- |
+| Customer / participant | **[Start the walkthrough](RUNBOOK.md)** — web console actions, optional CLI equivalents and expected results |
+| Cluster administrator | [Prepare and supervise the lab](ADMIN-GUIDE.md#prepare) — prerequisites, setup, isolation checks and recovery |
+| Presenter | [Recording outline](VIDEO-OUTLINE.md) — the same order, with a short explanation for each scene |
+| Everyone | [Record results](RESULTS-TEMPLATE.md) — customer observations and administrator sign-off |
 
-- CLI lab validation **passed on 2026-11-10**: RHEL 9 VMs on RWX disks,
-  approved-node placement, three-node spreading, an impossible scheduling
-  rule, manual live migration, and policy-triggered live migration.
-- The tested descheduler had background evictions enabled and a priority
-  threshold in both generated profiles. HCO's misconfigured-descheduler
-  metric was 0, with no matching alert. Guest boot identity and a test-file
-  checksum stayed unchanged through live migration.
-- Console steps are **pending presenter verification** while recording.
-  Record that separately in the results template.
-- Validation used OpenShift 4.22.11 / Virtualization 4.22.9 / Kube Descheduler
-  Operator 5.4.3. The target is 4.21.31; this is not acceptance of that client
-  environment. Run its version/operator/schema/storage preflight there.
+The customer walkthrough starts with **five Stopped VMs and prepared disks**.
+It is not a cluster installation guide. Choose the web UI or the equivalent
+CLI for each change; do not perform the same action twice.
 
-## VMware concepts mapped to OpenShift
+## What the test demonstrates
 
-| vSphere | OpenShift Virtualization | Test |
-|---|---|---|
-| Host group + VM-Host "must run on" rule | node label + required `nodeAffinity` in the VM | 01, 02 |
-| VM-VM anti-affinity "separate VMs" | `podAntiAffinity`, `topologyKey: kubernetes.io/hostname` | 02 |
-| "must" rule with an empty host group | unsatisfiable affinity -> `FailedScheduling` | 03 |
-| manual vMotion | `VirtualMachineInstanceMigration` / console **Migrate** | 04 |
-| DRS Manual (recommend only) | descheduler `mode: Predictive` | 05 |
-| DRS Fully Automated, rule-violation fix | descheduler `mode: Automatic`, `RemovePodsViolatingNodeAffinity` | 05 |
+| Familiar VMware idea | OpenShift equivalent |
+| --- | --- |
+| VM-to-host “must run” rule | A node label and required node affinity |
+| Keep related VMs apart | Hard pod anti-affinity |
+| Manual vMotion | Manual live migration |
+| Automatic rule correction | Descheduler request followed by live migration |
 
-Not continuous DRS: placement happens at start; required rules are
-"IgnoredDuringExecution". The descheduler runs on an interval, evicts a VM that
-now breaks its rule, and OpenShift Virtualization turns the eviction into a
-live migration. Editing a running VM's scheduling rules may show "restart
-required"; this lab moves node labels instead, so no restart is needed.
+This is **not continuous DRS or a CPU-load-balancing test**. The required
+scenario uses a documented no-PSI configuration. [CPU-aware balancing](OPTIONAL-CPU-AWARE.md)
+is optional and outside this walkthrough.
 
-## Descheduler configuration and why
+## Test status
 
-```yaml
-mode: Predictive            # Automatic only in an explicit, separate step
-deschedulingIntervalSeconds: 30
-profiles: [AffinityAndTaints, LongLifecycle, EvictPodsWithLocalStorage, EvictPodsWithPVC]
-profileCustomizations:
-  devEnableEvictionsInBackground: true
-  thresholdPriority: -999999999
-  namespaces: {included: [virt-scheduling-lab]}
-evictionLimits: {node: 1, total: 1}
-```
+CLI lab validation passed on **2026-11-10**, using OCP 4.22.11,
+Virtualization 4.22.9 and Kube Descheduler Operator 5.4.3. The target client
+version is **4.21.31**, which requires its own preflight.
 
-- **LongLifecycle + `devEnableEvictionsInBackground: true`** is the
-  virtualization-compatible configuration that works without PSI metrics. The
-  HCOMisconfiguredDescheduler runbook lists it as the third choice after
-  `KubeVirtRelieveAndMigrate` / `DevKubeVirtRelieveAndMigrate`, which require
-  PSI metrics. The 4.21 virtualization documentation (PDF, section 9.18.13.2)
-  documents LongLifecycle for VMs; current HTML pages prefer
-  `KubeVirtRelieveAndMigrate` with PSI. Versions differ: check what your
-  release supports (RUNBOOK 1.1).
-- **AffinityAndTaints** provides `RemovePodsViolatingNodeAffinity`, the
-  strategy this test exercises. It honors the namespace include.
-  AffinityAndTaints with background evictions **alone** is not on the HCO
-  list and raises `HCOMisconfiguredDescheduler`.
-- **LongLifecycle's `LowNodeUtilization` ignores the namespace include.** The
-  hard boundary is therefore `thresholdPriority` (Nodes documentation): pods
-  with priority at or above `-999999999` are protected by the priority filter.
-  This requires the clean inventory and reserved-class checks below; the
-  force-evict annotation bypasses that filter. Only
-  `placement-01` uses the reserved PriorityClass
-  `virt-scheduling-lab-evictable` (`-1000000000`). The runbook inventories all
-  pods before Predictive and again right before Automatic.
-- `EvictPodsWithLocalStorage` / `EvictPodsWithPVC`: virt-launcher pods use
-  local volumes and PVCs and are skipped without them.
-- No PSI MachineConfig is applied or proposed.
+Presenter verification of the **web console and video remains pending**.
+Keep completed results and environment evidence private.
 
-## Files
-
-```text
-manifests/          (apply after replacing REPLACE_WITH_RWX_STORAGE_CLASS; all VMs Halted)
-  00-namespace.yaml
-  01-placement-vm.yaml             placement-01: eligible-node affinity, reserved PriorityClass
-  02-spread-vms.yaml               spread-01..03: pool label + hard anti-affinity
-  03-negative-unsatisfiable-vm.yaml
-priorityclass/virt-scheduling-lab-evictable.yaml   cluster-scoped; create explicitly, UID-guarded cleanup
-actions/04-manual-migration.yaml   optional; starts a migration when created
-descheduler/        singleton changes, never directory-apply
-  05a-lab-predictive.patch.json    guarded patch -> lab config (dry run)
-  05b-lab-automatic.patch.json     guarded patch -> Automatic
-  05c-back-to-predictive.patch.json
-  05d-restore-touched-fields.jq    builds the guarded restore of the five touched fields
-  05e-create-if-absent.yaml        only when no KubeDescheduler exists
-```
-
-## VMs
-
-`rhel9-server-small` basis: 1 socket / 1 core / 1 thread, 2 GiB, SMM + EFI,
-virtio disk and NIC, RNG, masquerade pod network. Root disk cloned from the
-`rhel9` DataSource in `openshift-virtualization-os-images` (the standard
-boot source OpenShift Virtualization provides; no image is published here)
-onto a client **RWX Filesystem** StorageClass, 40 GiB each (golden image is
-about 32 GiB). Root disks are **persistent**: guest changes survive stop/start,
-`boot_id` changes on every boot. Five VMs = 200 GiB logical.
-
-No passwords or keys; root and SSH password login disabled. As a deliberate
-POC console convenience, the serial console auto-logs in as unprivileged
-`cloud-user` (no sudo); RBAC on the VM console controls who gets it. Not a
-production guest policy. `qemu-guest-agent` ships in the image and is only
-enabled; nothing is installed or updated. No Service, Route or LoadBalancer is
-created. Node names, storage classes and label domains are placeholders.
-
-## References
-
-- HCOMisconfiguredDescheduler alert runbook:
-  <https://github.com/openshift/runbooks/blob/master/alerts/openshift-virtualization-operator/HCOMisconfiguredDescheduler.md>
-- OpenShift 4.21 Nodes - controlling pod placement (affinity, descheduler profiles, `thresholdPriority`, Predictive mode):
-  <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/nodes/controlling-pod-placement-onto-nodes-scheduling>
-- OpenShift 4.21 Virtualization - live migration:
-  <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/live-migration>
-- OpenShift 4.21 Virtualization - storage:
-  <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/storage>
-- OpenShift 4.21 Virtualization (PDF; descheduler for VMs, section 9.18.13.2):
-  <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/pdf/virtualization/OpenShift_Container_Platform-4.21-Virtualization-en-US.pdf>
+Technical configuration, Red Hat references, reset and disk cleanup are in
+the [administrator guide](ADMIN-GUIDE.md). YAML files remain under manifests/,
+priorityclass/, actions/ and descheduler/; apply only the file named in the
+relevant step, never the whole repository.
