@@ -1,0 +1,152 @@
+# Case 02 - FENCING: NOT TESTED. Sample generic VM for the recovery test.
+#
+# BEFORE APPLYING replace:
+#   REPLACE_SOURCE_NODE        : exact SOURCE node name (preference only)
+#   REPLACE_SSH_PUBLIC_KEY     : one SSH public key line for cloud-user
+#   claimName case02-vm-rootdisk : an EXISTING, Bound, administrator-approved
+#                                  PVC in this namespace (Block or Filesystem) holding a
+#                                  bootable RHEL 9 QCOW2/disk image prepared from
+#                                  an approved image (ADMIN-GUIDE "Prepare the
+#                                  VM disk"), dedicated to this VM, on shared
+#                                  storage usable from BOTH pool nodes (RWX, or
+#                                  RWO only after the administrator validated the
+#                                  CSI failover attach behaviour). Never reuse a
+#                                  production PVC. It is not created here and is
+#                                  never deleted by this case.
+#
+# Starts Halted. Start it only at RUNBOOK step 2.
+#
+# Placement: REQUIRED = the case pool label (SOURCE and TARGET only).
+# PREFERRED = SOURCE. There is no hostname hard-pin, so no edit is needed
+# before the test. RUNBOOK step 2 confirms the VM really runs on SOURCE; if it
+# does not, stop and ask the administrator.
+#
+# No evictionStrategy is set: this case cordons rather than drains, and a
+# node-failure restart is not a live migration.
+#
+# Guest: no user password. Login is by the SSH public key only. The tiny
+# heartbeat service writes boot id + time to a persistent file every 10 s and
+# serves the directory on port 8080 (pod network only) as the app probe.
+# python3 must exist in the image; if not, ask the administrator for another probe.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: recovery-vm
+  namespace: host-recovery-lab
+  labels:
+    host-recovery-lab.example.com/case: "02"
+spec:
+  runStrategy: Halted
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        host-recovery-lab.example.com/case: "02"
+        kubevirt.io/domain: recovery-vm
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: host-recovery-lab.example.com/pool
+                    operator: In
+                    values:
+                      - "case02"
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - REPLACE_SOURCE_NODE
+      terminationGracePeriodSeconds: 60
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+          model: host-model
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          persistentVolumeClaim:
+            claimName: case02-vm-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: recovery-vm
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  gecos: Case 02 test user
+                  lock_passwd: true
+                  shell: /bin/bash
+                  ssh_authorized_keys:
+                    - REPLACE_SSH_PUBLIC_KEY
+              write_files:
+                - path: /usr/local/bin/case02-heartbeat.sh
+                  permissions: "0755"
+                  content: |
+                    #!/bin/bash
+                    # Persistent token is created once and survives restarts.
+                    mkdir -p /var/lib/case02
+                    [ -f /var/lib/case02/persist.txt ] || cat /proc/sys/kernel/random/uuid > /var/lib/case02/persist.txt
+                    while true; do
+                      echo "$(date -u +%FT%TZ) boot_id=$(cat /proc/sys/kernel/random/boot_id)" >> /var/lib/case02/heartbeat.log
+                      tail -n 200 /var/lib/case02/heartbeat.log > /var/lib/case02/heartbeat.tmp && mv /var/lib/case02/heartbeat.tmp /var/lib/case02/heartbeat.log
+                      sleep 10
+                    done
+                - path: /etc/systemd/system/case02-heartbeat.service
+                  content: |
+                    [Unit]
+                    Description=Case 02 heartbeat writer
+                    [Service]
+                    ExecStart=/usr/local/bin/case02-heartbeat.sh
+                    Restart=always
+                    [Install]
+                    WantedBy=multi-user.target
+                - path: /etc/systemd/system/case02-probe.service
+                  content: |
+                    [Unit]
+                    Description=Case 02 app probe (HTTP 8080)
+                    [Service]
+                    WorkingDirectory=/var/lib/case02
+                    ExecStart=/usr/bin/python3 -m http.server 8080
+                    Restart=always
+                    [Install]
+                    WantedBy=multi-user.target
+              runcmd:
+                - [mkdir, -p, /var/lib/case02]
+                - [systemctl, daemon-reload]
+                - [systemctl, enable, --now, case02-heartbeat.service]
+                - [systemctl, enable, --now, case02-probe.service]

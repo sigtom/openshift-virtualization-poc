@@ -1,0 +1,20 @@
+# Case 02 - FENCING: NOT TESTED. Use ONLY if Fence Agents Remediation is
+# MISSING (ADMIN-GUIDE "Operator check"). Apply this single file alone; the
+# Node Health Check subscription is a separate file.
+#
+# No Namespace and no OperatorGroup here: reuse the existing ones in
+# openshift-workload-availability. If it has no OperatorGroup, follow the Red Hat
+# install procedure instead of adding a second one. Check the package and channel
+# with: oc get packagemanifest fence-agents-remediation -n openshift-marketplace
+# Manual approval: you approve the exact InstallPlan (ADMIN-GUIDE).
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: fence-agents-remediation-subscription
+  namespace: openshift-workload-availability
+spec:
+  channel: stable
+  installPlanApproval: Manual
+  name: fence-agents-remediation
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
