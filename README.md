@@ -8,6 +8,7 @@ Hands-on tests for VMware/vCenter teams learning OpenShift Virtualization.
 | --- | --- | --- |
 | 01 — VM placement and migration | **[Run the tests](test-cases/01-scheduling-and-migration/RUNBOOK.md)** | [Prepare the lab](test-cases/01-scheduling-and-migration/ADMIN-GUIDE.md#prepare) |
 | 02 — VM recovery after host failure (**fencing NOT TESTED**) | **[Run the test](test-cases/02-host-failure-recovery/RUNBOOK.md)** | [Prepare and gate](test-cases/02-host-failure-recovery/ADMIN-GUIDE.md#prepare) |
+| 05 — Storage IOPS (**client validation pending**; Dell layer **deferred**) | **[Run the test](test-cases/05-storage-iops/RUNBOOK.md)** | [Prepare](test-cases/05-storage-iops/ADMIN-GUIDE.md#prepare) |
 
 Case 01 covers approved-host placement, VM separation, an impossible rule,
 manual live migration and automatic placement-rule correction. Each test
@@ -17,6 +18,10 @@ Case 02 stops the kubelet on one dedicated worker, lets Node Health Check and
 Fence Agents Remediation power-cycle it through its iDRAC, and shows the VM
 restarting on a second worker. It is a restart, not a live migration, and not
 proof of full hardware failure.
+
+Case 05 measures IOPS, latency and throughput using an existing VM and its existing workload,
+or an optional bounded read-only fio workload. PowerFlex measurements are recorded separately;
+CSM-exported metrics require an existing installation. The Dell procedure is deferred.
 
 The administrator prepares the cluster and VMs first. Customers then follow
 one short walkthrough; detailed operator checks and cleanup stay in the

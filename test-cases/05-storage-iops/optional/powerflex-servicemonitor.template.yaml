@@ -1,0 +1,29 @@
+# Case 05 - DEFERRED, NOT TESTED. TEMPLATE ONLY: never apply by default.
+# Use only after DELL-OBSERVABILITY.md gates are met on a real PowerFlex environment with an
+# EXISTING Dell CSM install and its observability metrics service already Ready. It does not
+# change the CSM resource, driver or modules; it only adds one scrape monitor you can delete.
+# TLS is verified: CA comes from a ConfigMap you create from the real CA (no secret values in the
+# repository) and serverName must match a SAN of the real certificate. Do not set insecureSkipVerify.
+# Check the Service's real labels and port name first; replace every REPLACE_*.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: poc-powerflex-observability
+  namespace: REPLACE_CSM_NAMESPACE
+  labels:
+    perf-lab.example.com/case: "05"
+spec:
+  selector:
+    matchLabels:
+      REPLACE_SERVICE_LABEL_KEY: REPLACE_SERVICE_LABEL_VALUE
+  endpoints:
+    - port: exporter-https
+      scheme: https
+      path: /metrics
+      interval: 30s
+      tlsConfig:
+        serverName: REPLACE_SERVER_NAME_FROM_CERT_SAN
+        ca:
+          configMap:
+            name: REPLACE_CA_CONFIGMAP
+            key: REPLACE_CA_KEY

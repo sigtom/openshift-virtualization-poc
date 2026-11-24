@@ -1,0 +1,102 @@
+# Case 05 - NOT TESTED. OPTIONAL (use an existing VM unchanged if possible). Starts Halted.
+# Replace before applying:
+#   REPLACE_STORAGE_CLASS         approved StorageClass (ReadWriteOnce is enough)
+#   REPLACE_DATASOURCE_NAME       prepared image DataSource that already contains python3 and fio
+#   REPLACE_DATASOURCE_NAMESPACE  namespace of that DataSource
+# TEMPLATE, not deployment proof: persistent provisioning of it has not been run. Verify on the installed version.
+# No helper is embedded (cloud-init user data is limited to 2048 bytes). Dedicated poc-user: sudo disabled,
+# no password. The image itself must not grant that user sudo.
+# The test directory is on the root disk, which also carries OS background I/O.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: storage-iops-vm
+  namespace: perf-storage-lab
+  labels:
+    perf-lab.example.com/case: "05"
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: storage-iops-vm-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: REPLACE_DATASOURCE_NAME
+          namespace: REPLACE_DATASOURCE_NAMESPACE
+        storage:
+          storageClassName: REPLACE_STORAGE_CLASS
+          accessModes:
+            - ReadWriteOnce
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 30Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        perf-lab.example.com/case: "05"
+        kubevirt.io/domain: storage-iops-vm
+    spec:
+      architecture: amd64
+      terminationGracePeriodSeconds: 60
+      domain:
+        cpu:
+          sockets: 1
+          cores: 2
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: storage-iops-vm-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: storage-iops-vm
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: poc-user
+                  lock_passwd: true
+                  sudo: false
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin poc-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]
