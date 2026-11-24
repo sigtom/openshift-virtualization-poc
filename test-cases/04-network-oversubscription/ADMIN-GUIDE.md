@@ -199,10 +199,15 @@ After creation, record the name and `metadata.uid` of each VM, DataVolume, PVC a
 privately (**VM → YAML**, or `oc get vm,dv,pvc,svc -n perf-network-lab -o yaml`).
 Keep this record for cleanup. Do not reuse a pre-existing object as a new one.
 
-Replace every `REPLACE_*` in the manifests (storage class, tool DataSource name and
-namespace). Disk size must be at least the source image. ReadWriteOnce Filesystem storage
-is enough; no live migration is needed. Apply from the case directory (console **+ →
-Import YAML**):
+Replace the remaining `REPLACE_*` values (tool DataSource name and namespace).
+New disks default to **vxflexos / Block / ReadWriteMany**. In **Storage →
+StorageClasses**, open **vxflexos**; check its StorageProfile supports this
+combination and ask the storage administrator to confirm the image can be copied
+or cloned into it. The DataSource must be Ready and fit the requested disk.
+After population, open each PVC and verify **Bound**, **vxflexos**, **Block**, and
+**ReadWriteMany**. Stop on unsupported storage or clone errors. Existing VMs on
+Path A can keep their current storage. Apply from the case directory (console
+**+ → Import YAML**):
 
 ~~~sh
 oc apply -f manifests/00-namespace.yaml

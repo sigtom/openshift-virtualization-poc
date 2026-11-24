@@ -3,8 +3,7 @@
 # OPTIONAL FALLBACK (Path B). Prefer suitable EXISTING VMs with no changes (case ADMIN-GUIDE,
 # "Path A"). Apply this file only when no suitable existing VM is available.
 # BEFORE APPLYING replace:
-#   REPLACE_STORAGE_CLASS         client StorageClass (ReadWriteOnce is enough; RWX only if you also
-#                                 want live migration, which this case does not use)
+# Disk default: vxflexos, ReadWriteMany, Block. Confirm support before creation.
 #   REPLACE_DATASOURCE_NAME       the approved image DataSource that ALREADY contains the guest tools
 #   REPLACE_DATASOURCE_NAMESPACE  namespace of that DataSource
 # The disk must be at least as large as the source image. Starts Halted; nothing is labelled here.
@@ -42,10 +41,10 @@ spec:
           name: REPLACE_DATASOURCE_NAME
           namespace: REPLACE_DATASOURCE_NAMESPACE
         storage:
-          storageClassName: REPLACE_STORAGE_CLASS
+          storageClassName: vxflexos
           accessModes:
-            - ReadWriteOnce
-          volumeMode: Filesystem
+            - ReadWriteMany
+          volumeMode: Block
           resources:
             requests:
               storage: 30Gi
@@ -207,8 +206,7 @@ spec:
 # OPTIONAL FALLBACK (Path B). Prefer suitable EXISTING VMs with no changes (case ADMIN-GUIDE,
 # "Path A"). Apply this file only when no suitable existing VM is available.
 # BEFORE APPLYING replace:
-#   REPLACE_STORAGE_CLASS         client StorageClass (ReadWriteOnce is enough; RWX only if you also
-#                                 want live migration, which this case does not use)
+# Disk default: vxflexos, ReadWriteMany, Block. Confirm support before creation.
 #   REPLACE_DATASOURCE_NAME       the approved image DataSource that ALREADY contains the guest tools
 #   REPLACE_DATASOURCE_NAMESPACE  namespace of that DataSource
 # The disk must be at least as large as the source image. Starts Halted; nothing is labelled here.
@@ -246,10 +244,10 @@ spec:
           name: REPLACE_DATASOURCE_NAME
           namespace: REPLACE_DATASOURCE_NAMESPACE
         storage:
-          storageClassName: REPLACE_STORAGE_CLASS
+          storageClassName: vxflexos
           accessModes:
-            - ReadWriteOnce
-          volumeMode: Filesystem
+            - ReadWriteMany
+          volumeMode: Block
           resources:
             requests:
               storage: 30Gi

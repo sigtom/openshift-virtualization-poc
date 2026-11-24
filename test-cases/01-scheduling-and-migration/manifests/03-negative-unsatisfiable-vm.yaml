@@ -1,7 +1,8 @@
 # 03 - negative-01: an impossible placement rule must be refused visibly.
 #
 # Same rhel9-server-small basis as 01-placement-vm.yaml (read its header).
-# BEFORE APPLYING: replace REPLACE_WITH_RWX_STORAGE_CLASS.
+# BEFORE APPLYING: confirm vxflexos supports ReadWriteMany / Block
+# and the approved image-population path (ADMIN-GUIDE section 1.3).
 #
 # When started, the launcher pod stays Pending and the scheduler emits
 # FailedScheduling ("didn't match Pod's node affinity/selector"). Never label
@@ -33,10 +34,10 @@ spec:
           name: rhel9
           namespace: openshift-virtualization-os-images
         storage:
-          storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS
+          storageClassName: vxflexos
           accessModes:
             - ReadWriteMany
-          volumeMode: Filesystem
+          volumeMode: Block
           resources:
             requests:
               storage: 40Gi

@@ -1,6 +1,6 @@
 # Case 05 - NOT TESTED. OPTIONAL (use an existing VM unchanged if possible). Starts Halted.
 # Replace before applying:
-#   REPLACE_STORAGE_CLASS         approved StorageClass (ReadWriteOnce is enough)
+# Disk default: vxflexos, ReadWriteMany, Block. Confirm support before creation.
 #   REPLACE_DATASOURCE_NAME       prepared image DataSource that already contains python3 and fio
 #   REPLACE_DATASOURCE_NAMESPACE  namespace of that DataSource
 # TEMPLATE, not deployment proof: persistent provisioning of it has not been run. Verify on the installed version.
@@ -27,10 +27,10 @@ spec:
           name: REPLACE_DATASOURCE_NAME
           namespace: REPLACE_DATASOURCE_NAMESPACE
         storage:
-          storageClassName: REPLACE_STORAGE_CLASS
+          storageClassName: vxflexos
           accessModes:
-            - ReadWriteOnce
-          volumeMode: Filesystem
+            - ReadWriteMany
+          volumeMode: Block
           resources:
             requests:
               storage: 30Gi

@@ -40,8 +40,9 @@ administrator guide.
 
 The target is OpenShift 4.21.31. Validation boundaries differ by case:
 
-- **Case 01:** CLI validation is complete; that
-  does not replace client preflight or presenter UI verification.
+- **Case 01:** preparation and all five console scenarios have been exercised
+  with fresh VMs on alternate shared storage. New **vxflexos / Block / RWX** disk
+  provisioning still needs target-cluster validation. Complete client preflight.
 - **Case 02:** **fencing NOT TESTED**, and
   its console steps are unverified. It was written from Red Hat 4.21 and upstream
   sources for client bare-metal iDRAC; the installed operator versions and schemas
@@ -52,3 +53,9 @@ Use the [recording outline](test-cases/01-scheduling-and-migration/VIDEO-OUTLINE
 for a video and the [results sheet](test-cases/01-scheduling-and-migration/RESULTS-TEMPLATE.md)
 to record outcomes. The YAML is generic: agree local worker and storage values
 before use. Keep credentials and environment evidence out of this public repository.
+
+New-VM disk templates use **vxflexos / Block / ReadWriteMany (RWX)**. Confirm
+the installed storage driver, StorageProfile and image-population path before
+creation. Existing-VM paths can keep suitable disks unchanged. Console images
+illustrate navigation and may show alternate storage; they do not validate
+PowerFlex provisioning. See the [storage preflight](test-cases/01-scheduling-and-migration/ADMIN-GUIDE.md#13-shared-block-storage).

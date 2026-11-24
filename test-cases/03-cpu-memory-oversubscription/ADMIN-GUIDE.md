@@ -238,11 +238,14 @@ After creation, record the name and `metadata.uid` of each VM, DataVolume, PVC a
 privately (**VM → YAML**, or `oc get vm,dv,pvc -n perf-cpumem-lab -o yaml`).
 Keep this record for cleanup. Do not reuse a pre-existing object as a new one.
 
-Replace every `REPLACE_*` in `manifests/01-…` and `02-…` (storage class, tool
-DataSource name and namespace). Check the DataSource is Ready, the
-source image fits the disk size (40 GiB measured, 30 GiB each competitor), and
-the storage class is ReadWriteOnce Filesystem (RWX only if you also plan live
-migration, which this case does not use; a VM on RWO storage cannot migrate).
+Replace the remaining `REPLACE_*` values (tool DataSource name and namespace).
+New disks default to **vxflexos / Block / ReadWriteMany**. In **Storage →
+StorageClasses**, open **vxflexos**; check its StorageProfile supports this
+combination and ask the storage administrator to confirm the image can be copied
+or cloned into it. Check the DataSource is Ready and fits the disk size (40 GiB
+measured, 30 GiB each competitor). After population, open each PVC and verify
+**Bound**, **vxflexos**, **Block**, and **ReadWriteMany**. Stop on unsupported
+storage or clone errors. This optional path does not require changing existing VMs.
 
 Apply in order, from the case directory (console alternative: **+ → Import
 YAML**):
