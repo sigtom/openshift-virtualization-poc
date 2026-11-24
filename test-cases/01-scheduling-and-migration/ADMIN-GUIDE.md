@@ -310,6 +310,8 @@ virtualmachineinstances.subresources.kubevirt.io --subresource=console`.
   ```
 - Expected: five VMs, all **Stopped** (`Halted`), no VMI.
 
+![Prepared VM definitions should all be stopped](images/06-all-stopped.png)
+
 ### 2.4 Wait for the root-disk clones
 
 Console: VM provisioning progress and **Storage → PersistentVolumeClaims**
@@ -400,7 +402,7 @@ jq '.spec | {mode, deschedulingIntervalSeconds, profiles, profileCustomizations,
 RV0=$(jq -r .metadata.resourceVersion "$LAB_EVIDENCE/kubedescheduler-snapshot.json")
 ```
 
-Console: KubeDescheduler `cluster` > **YAML** > **Download** (keep it private).
+Console: **Ecosystem → Installed Operators** (or **Operators → Installed Operators**). Select project **openshift-kube-descheduler-operator**; turn on **Show default projects** in the project selector if it is hidden. Open **Kube Descheduler Operator → Kube Descheduler → cluster → YAML → Download**. Keep the download private.
 
 No object (NotFound): create it with the lab values and record its UID; then
 skip 7.4's patch (but **not** 7.4's verification):
@@ -460,6 +462,10 @@ spec:
       included: [virt-scheduling-lab]
   evictionLimits: {node: 1, total: 1}
 ```
+
+![Predictive mode, interval and priority fields in the YAML editor](images/05-predictive-settings.png)
+
+After **Save**, click **Reload** and read the fields again. A success banner confirms a save, but the field values and the checks below confirm what is running. Keep this YAML page available so you can return to Predictive promptly.
 
 Verify what the operator generated (always, also after 05e):
 
@@ -703,7 +709,7 @@ Root disks are kept between takes (guest changes persist; boot_id changes on eac
    done
    for vm in $LAB_VMS; do oc wait vmi/"$vm" -n $NS --for=delete --timeout=300s; done
    ```
-   Console: stop each VM; list shows **Stopped**.
+   Console: open each named VM and use **Actions → Control → Stop**; wait for the list to show **Stopped**. Keep the disks.
 4. Delete only finished migrations of the lab VMs:
    ```sh
    oc get vmim -n $NS -o json | jq -r '.items[]
@@ -836,3 +842,8 @@ are unchanged. CPU-load-aware balancing remains a separate optional topic.
   <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/storage>
 - OpenShift 4.21 Virtualization (PDF; descheduler for VMs, section 9.18.13.2):
   <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/pdf/virtualization/OpenShift_Container_Platform-4.21-Virtualization-en-US.pdf>
+
+- OpenShift 4.21 Virtualization — managing VMs and console access:
+  <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/managing-vms>
+- OpenShift 4.22 Virtualization — managing VMs and console access:
+  <https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/managing-vms>

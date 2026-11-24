@@ -16,7 +16,9 @@ The administrator must complete [preparation and setup](ADMIN-GUIDE.md#prepare).
 
 Ask the administrator to identify **Worker A, Worker B, and Worker C**. Use only those workers.
 
-Use the **web console or the equivalent CLI** for each change, not both. The CLI sections are collapsed so you can follow the web console without reading commands. Verification commands can run after a console action. Menu wording can vary by OpenShift version.
+Use the **web console or the equivalent CLI** for each change, not both. The CLI sections are collapsed so you can follow the web console without reading commands. Verification commands can run after a console action. Menu wording can vary by OpenShift version. If a welcome dialog appears, close it to continue.
+
+The screenshots show the controls to use. Black boxes cover environment-specific values, including node names and guest output. These pictures show where to look; record and compare the unredacted values in your own console.
 
 <details>
 <summary>Using the CLI? Set your worker names once</summary>
@@ -43,9 +45,14 @@ Replace the three worker names with the values agreed with your administrator. K
 **In the web console**
 
 1. Open **Compute → Nodes → Worker A → Actions → Edit labels**.
-2. Add **scheduling-lab.example.com/eligible=true**, then save.
-3. Open **Virtualization → VirtualMachines**, select project **virt-scheduling-lab**.
-4. Open **placement-01 → Actions → Start**.
+2. Type **scheduling-lab.example.com/eligible=true** in the label entry box. Press **Enter** so it becomes a label, then click **Save**. Leave all existing labels unchanged.
+
+   ![Add the eligibility label in Edit labels](images/01-label-entry.png)
+
+3. Open **Virtualization → VirtualMachines** in project **virt-scheduling-lab**, then choose the **Virtual machines** tab if the Overview opens. If the project filter is disabled and the wrong project is shown, open **Workloads → Pods**, select **virt-scheduling-lab** in the project selector, then return here.
+4. Open **placement-01 → Actions → Control → Start**. Some versions call this **Start VirtualMachine**.
+
+   ![Start a VM from the Control submenu](images/01-start-control-menu.png)
 
 **Check the result:** the VM becomes **Running** and its **Node** is **Worker A**. If it remains Pending or starts elsewhere, stop and ask the administrator.
 
@@ -61,7 +68,11 @@ oc get vmi placement-01 -n "$NS" -o wide
 
 </details>
 
-**Show the rule:** open the VM's **YAML** or **Configuration → Scheduling**. Its required node affinity matches the eligible label. The rule is part of the VM definition.
+![Placement VM running; compare your own Node value](images/01-placement-running.png)
+
+**Show the rule:** open **Configuration → Scheduling → 1 Affinity rules**. In the Node Affinity row, open the three-dot menu and choose **Edit** to inspect the existing rule. Confirm **Required during scheduling**, key **scheduling-lab.example.com/eligible**, operator **In**, and value **true**. Click **Cancel** in both dialogs; do not save or apply changes.
+
+![Inspect the existing required node-affinity rule](images/01-affinity-expression.png)
 
 Before any migration, have the administrator confirm the guest agent, live-migration eligibility and actual launcher priority using the [administrator checks](ADMIN-GUIDE.md#running-vm-checks).
 
@@ -72,10 +83,12 @@ Before any migration, have the administrator confirm the guest agent, live-migra
 **In the web console**
 
 1. Add **scheduling-lab.example.com/spread-pool=true** to **Workers A, B and C**.
-2. Start **spread-01**, **spread-02** and **spread-03**.
+2. Open each of **spread-01**, **spread-02** and **spread-03**, then use **Actions → Control → Start**.
 3. Return to the VM list and compare their **Node** values.
 
 **Check the result:** the three VMs are Running on **three different approved workers**. The assignment of each VM can vary.
+
+![Three spread VMs running; compare their Node values](images/02-spread-running.png)
 
 <details>
 <summary>Equivalent CLI and checks</summary>
@@ -91,7 +104,9 @@ oc get vmi -n "$NS" -l cohort=spread -o custom-columns=VM:.metadata.name,NODE:.s
 
 </details>
 
-**Before continuing:** stop the three spread VMs. Keep their disks.
+**Before continuing:** open each spread VM and choose **Actions → Control → Stop**. Wait until all three show **Stopped**. Keep their disks.
+
+![Spread VMs stopped before the remaining tests](images/02-spread-stopped.png)
 
 <details>
 <summary>CLI: stop the spread VMs</summary>
@@ -115,9 +130,12 @@ done
 
 1. Open **negative-01 → YAML**. Its rule requires the label **scheduling-lab.example.com/unsatisfiable=true**.
 2. Start the VM. Do not add that label to any worker.
-3. Open its **Events** tab.
+3. In the VM's **Overview**, find **General → Pod** and click the **virt-launcher-negative-01-…** link.
+4. On the **Pod** page, open **Events**. VM Events can show only creation messages.
 
-**Check the result:** the VM does **not** become Running. An event reports **FailedScheduling**, with a node affinity or selector mismatch. This is the expected result of this test.
+   ![Launcher Pod events showing the node-affinity mismatch](images/03-failed-scheduling.png)
+
+**Check the result:** the VM does **not** become Running. The Pod stays **Pending** and its scheduling event reports a node affinity or selector mismatch (**FailedScheduling**). The VM may show **ErrorUnschedulable**. This is the expected result of this test.
 
 <details>
 <summary>Equivalent CLI and checks</summary>
@@ -132,7 +150,7 @@ Look for the new event associated with negative-01; earlier events can remain in
 
 </details>
 
-**Before continuing:** stop **negative-01**.
+**Before continuing:** return to **negative-01** and choose **Actions → Control → Stop**. Wait for **Stopped**.
 
 <details>
 <summary>CLI: stop the negative-test VM</summary>
@@ -151,10 +169,14 @@ oc wait vmi/negative-01 -n "$NS" --for=delete --timeout=300s
 **In the web console**
 
 1. Add **scheduling-lab.example.com/eligible=true** to **Worker B**.
-2. Open **placement-01 → Actions → Migrate → Compute**. Some consoles show **Migrate** directly.
-3. Confirm the migration. Worker B is the only other eligible worker.
+2. Open **placement-01 → Actions → Migration → Compute**. Some versions call the menu **Migrate**.
+3. Leave **Automatically selected Node** selected and click **Migrate VirtualMachine**. Worker B is the only other eligible worker.
 
-**Check the result:** the VM briefly shows **Migrating**, then **Running on Worker B**. Its migration record shows **Succeeded**. Wait for completion before continuing.
+   ![Choose compute migration from the Migration submenu](images/04-migration-menu.png)
+
+   ![Confirm migration with an automatically selected target](images/04-migration-confirmation.png)
+
+**Check the result:** the VM briefly shows **Migrating**, then **Running on Worker B**. Its migration record shows **Succeeded**. To find it, open **Virtualization → VirtualMachines → Overview → Migration statuses → View all** in the test project. Compare **Source**, **Target** and **Status**. Wait for completion before continuing.
 
 <details>
 <summary>Equivalent CLI and checks</summary>
@@ -180,13 +202,17 @@ This test is **rule correction**, not CPU-load balancing.
 
 **Required handoff:** the administrator must complete [descheduler preparation and health checks](ADMIN-GUIDE.md#descheduler-prepare). This includes the original configuration snapshot, background evictions, priority isolation and generated-policy checks.
 
-In the console, open **Installed Operators → Kube Descheduler Operator → KubeDescheduler → cluster**. The mode should be **Predictive**. In this mode, it reports proposed moves and does not perform them.
+In the console, open **Ecosystem → Installed Operators** (called **Operators → Installed Operators** in some versions). Select project **openshift-kube-descheduler-operator**; enable **Show default projects** in the project selector if needed. Open **Kube Descheduler Operator → Kube Descheduler → cluster → YAML**. The mode should be **Predictive**. In this mode, it reports proposed moves and does not perform them.
 
 Do not continue until the administrator confirms the checkpoint passed. The [administrator CLI procedure](ADMIN-GUIDE.md#descheduler-prepare) provides the matching guarded commands.
 
 ### B. Record the running VM's identity
 
-Open **placement-01 → Console → Serial console** and press Enter. The prepared POC guest logs in as **cloud-user**. First boot can take a few minutes.
+Open **placement-01 → Console**. Use the **VNC console** dropdown to choose **Serial console**. Wait for it to connect, click inside the black terminal area, and press **Enter**.
+
+![Select Serial console from the console dropdown](images/04-console-selector.png)
+
+The prepared POC guest logs in as **cloud-user**. First boot can take a few minutes.
 
 Run these commands **inside the guest** and record their output:
 
@@ -194,6 +220,8 @@ Run these commands **inside the guest** and record their output:
 cat /proc/sys/kernel/random/boot_id
 cut -d' ' -f1 /proc/uptime
 ~~~
+
+![Record the guest boot ID and uptime before automatic migration](images/05-guest-before-automatic.png)
 
 The first value identifies this boot. The second is uptime in seconds. The administrator also records the VM and running-instance IDs for the final comparison.
 
@@ -221,7 +249,7 @@ Read the VM's current **Node**; call it **SOURCE**. Choose the other worker as *
 **In the web console**
 
 1. Confirm TARGET has **scheduling-lab.example.com/eligible=true**. Add it first if absent.
-2. Remove **only that eligible label** from SOURCE.
+2. On SOURCE, open **Actions → Edit labels**. Click the **×** on **scheduling-lab.example.com/eligible=true**, then **Save**. Leave every other label unchanged.
 3. Return to placement-01.
 
 **Check the result:** the VM keeps running on SOURCE for now. The rule uses **IgnoredDuringExecution**; the label change alone does not relocate it.
@@ -247,9 +275,11 @@ oc get vmi placement-01 -n "$NS" -o wide
 
 ### D. Show the proposed move
 
-Open **Workloads → Deployments → descheduler → Pods → Logs** in project **openshift-kube-descheduler-operator**.
+Open **Workloads → Deployments → descheduler → Pods**, click the **Running descheduler-… pod**, then open its **Logs** tab in project **openshift-kube-descheduler-operator**.
 
-Allow two 30-second intervals. Look for **placement-01**, **RemovePodsViolatingNodeAffinity**, and a dry-run eviction message.
+Allow two 30-second intervals. Look for **placement-01**, **RemovePodsViolatingNodeAffinity**, and a dry-run eviction message. Use **Search logs** to find **placement-01**; searching pauses the stream, so click **Resume stream** when finished.
+
+![Predictive logs showing the proposed node-affinity eviction](images/05-predictive-dry-run.png)
 
 **Check the result:** the VM remains on SOURCE, and no new automatic migration appears. A completed manual migration from test 4 can still be listed.
 
@@ -270,9 +300,11 @@ oc get vmim -n "$NS"
 
 **Required handoff:** immediately before enabling Automatic, the administrator repeats the [isolation and activation checks](ADMIN-GUIDE.md#activate). A clean check from earlier in the session is not enough.
 
-After confirmation, the administrator changes only **mode: Predictive → Automatic** in the cluster YAML, or runs the [guarded CLI alternative](ADMIN-GUIDE.md#activate).
+After confirmation, the administrator changes only **mode: Predictive → Automatic** in the cluster YAML, clicks **Save**, then **Reload**, and confirms **mode: Automatic**. The [guarded CLI alternative](ADMIN-GUIDE.md#activate) is also available.
 
 Watch placement-01. It should show **Migrating**, then **Running on TARGET**. In the migration list, a new cluster-created migration should reach **Succeeded**. Do not request a manual migration in this part of the test.
+
+![Completed compute migration records](images/05-migrations-succeeded.png)
 
 <details>
 <summary>CLI: watch the result</summary>
@@ -287,7 +319,7 @@ The eviction must be attributed to **RemovePodsViolatingNodeAffinity**. A move t
 
 </details>
 
-**Immediately after success, return to Predictive before checking the guest.** If no migration succeeds within five minutes, one fails, or another pod becomes an eviction candidate, return to Predictive and ask the administrator to investigate.
+**Immediately after success, return to Predictive before checking the guest.** In the same YAML page, change only **mode: Automatic → Predictive**, click **Save**, then **Reload** and confirm **mode: Predictive**. Have the administrator confirm **--dry-run=true** using the check below. If no migration succeeds within five minutes, one fails, or another pod becomes an eviction candidate, return to Predictive in the same way and ask the administrator to investigate.
 
 <details>
 <summary>CLI: return to Predictive and verify it</summary>
@@ -304,7 +336,9 @@ The arguments must include **--dry-run=true** again.
 
 ### F. Confirm the guest did not restart
 
-Reconnect to the guest Serial console. Run the same boot-ID and uptime commands from part B.
+Reconnect to the guest Serial console using the dropdown in part B. A console reconnection alone does not mean the guest restarted. Run the same boot-ID and uptime commands.
+
+![Repeat the guest boot-ID and uptime commands after migration](images/05-guest-after-automatic.png)
 
 **Pass when all are true:**
 
@@ -338,5 +372,7 @@ The administrator must [restore the original shared configuration](ADMIN-GUIDE.m
 
 - [Reset for another take](ADMIN-GUIDE.md#reset): keep VM disks.
 - [Remove the lab](ADMIN-GUIDE.md#cleanup): delete only this lab's resources and handle retained storage with its owner.
+
+![Five stopped VMs with their definitions retained](images/06-all-stopped.png)
 
 For recording, use the short [video outline](VIDEO-OUTLINE.md). For older numbered references in YAML comments, use the [administrator reference map](ADMIN-GUIDE.md#reference-map).
