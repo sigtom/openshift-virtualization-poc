@@ -80,7 +80,9 @@ Smallest reversible change, as an ordinary guest user, **no restart**:
 1. Transfer `guest-tools/poc-fio` from this repository to the guest account. If SSH is already available,
    from this case directory on the administrator workstation run `scp guest-tools/poc-fio USER@VM_ADDRESS:poc-fio`
    (replace the account and address). Use existing access; do not enable SSH just for this test. Alternatively,
-   use an approved image with the helper already present. In the guest console, run:
+   use an approved image with the helper already present. If `command -v poc-fio`
+   already prints its installed path, skip the copy block. Otherwise, after transferring
+   the file to `~/poc-fio`, run in the guest console:
 
    ~~~sh
    mkdir -p "$HOME/poc-bin"

@@ -46,7 +46,7 @@ Required layers agreed before the run (tick): [ ] guest workload  [ ] VM disk me
 | --- | --- | --- | --- | --- |
 | Guest workload | | | | |
 | VM disk metrics | | | | |
-| Dell PowerFlex (deferred, needs real PowerFlex and CSM) | Optional | Not run / Not available | | Recorded separately |
+| Dell PowerFlex (deferred; CSM needed only for exported metrics) | Optional | Not run / Not available | | Recorded separately |
 
 ## Final
 

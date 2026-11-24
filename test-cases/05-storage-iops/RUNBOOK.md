@@ -13,11 +13,18 @@ times. Do not resize, restart, snapshot or migrate the VM. Client console verifi
 2. **Overview**: confirm **Running**. **Metrics** tab → **Storage**: keep it open, set the
    time range to cover your run. If no storage graph appears, tell the administrator
    (they use **Observe → Metrics** instead).
-3. **Console** tab: log in with your existing guest account. Type the commands below there.
+3. **Console → Serial console**: log in with your existing guest account. Type the commands below there.
 
 **Expected:** VM Running, console prompt. Keep the VM's current workload as it is.
 
-## 2. Find the disk under test
+Paste **one command at a time**, press **Enter**, and wait for its expected output.
+Use the working console listed on your sheet if the existing guest uses a different console.
+
+## 2. Confirm the approved directory and disk
+
+Replace `/APPROVED/DIRECTORY` below **and in step 4** with the exact directory on your sheet.
+The administrator can provide both commands with that value already filled in.
+Do not type the placeholder literally.
 
 ```sh
 findmnt -T /APPROVED/DIRECTORY -o SOURCE,TARGET,FSTYPE
@@ -31,7 +38,9 @@ sheet says the mapping is unclear, stop (do not guess). The
 
 ## 3. Record an idle baseline
 
-Do nothing for **at least 2 minutes** (longer if the sheet says so). Write the UTC time: `date -u +%FT%TZ`.
+Run `date -u +%FT%TZ` and record **baseline start**. Leave the existing workload unchanged
+for **at least 2 minutes** (longer if the sheet says so), then run the same command
+and record **baseline end**.
 
 **Expected:** the VM storage graph is flat near zero (or at the existing workload's normal level).
 
@@ -70,7 +79,9 @@ background I/O, caches). Console latency is a virtual-disk average, not the gues
 
 ## 6. Recovery and cleanup
 
-Wait at least 2 minutes idle; note the graph returns to baseline. If you used Option B:
+Run `date -u +%FT%TZ` and record **recovery start**. Wait at least 2 minutes
+(or the time on your sheet), then record **recovery end** with the same command.
+Note whether the graph returns to baseline. If you used Option B:
 
 ```sh
 poc-fio cleanup
