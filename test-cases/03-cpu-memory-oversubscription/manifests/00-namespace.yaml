@@ -1,0 +1,8 @@
+# Case 03 - NOT TESTED. Dedicated project for the optional CPU / memory lab VMs (Path B).
+# Do NOT apply if the project exists or belongs to someone else.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: perf-cpumem-lab
+  labels:
+    perf-lab.example.com/case: "03"

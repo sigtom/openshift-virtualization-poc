@@ -1,0 +1,11 @@
+#!/bin/bash
+# Read-only snapshot of guest CPU, memory, swap and pressure counters.
+echo "utc=$(date -u +%FT%TZ)"
+echo "vcpus=$(nproc)"
+awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {printf "%s %d MiB\n", $1, $2/1024}' /proc/meminfo
+echo "loadavg=$(cut -d' ' -f1-3 /proc/loadavg)"
+awk '/^cpu / {printf "cpu_steal_ticks=%s cpu_total_ticks=%d\n", $9, $2+$3+$4+$5+$6+$7+$8+$9}' /proc/stat
+grep -E '^(pswpin|pswpout|pgmajfault|oom_kill) ' /proc/vmstat | tr '\n' ' '; echo
+for f in cpu memory; do
+  if [ -r /proc/pressure/$f ]; then echo "psi_$f: $(head -1 /proc/pressure/$f)"; else echo "psi_$f: not available"; fi
+done

@@ -1,0 +1,8 @@
+# Case 04 - NOT TESTED. Dedicated project for the optional network lab VMs (Path B).
+# Do NOT apply if the project exists or belongs to someone else.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: perf-network-lab
+  labels:
+    perf-lab.example.com/case: "04"
