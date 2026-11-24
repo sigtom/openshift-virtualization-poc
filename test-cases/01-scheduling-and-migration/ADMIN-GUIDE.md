@@ -18,9 +18,7 @@ Do not enable Automatic without a fresh priority/force-eviction inventory.
 Snapshot the shared descheduler before changing it, and restore it afterward.
 Do not apply MachineConfigs or enable PSI as part of this required test.
 
-UI steps are documented instructions, not a claim of presenter verification.
-The target OpenShift 4.21.31 environment needs preflight against its installed
-Virtualization and Descheduler Operator versions.
+Use the screenshots as navigation examples. Black boxes cover environment-specific values; read and record your own values. The target OpenShift 4.21.31 environment still needs preflight against its installed Virtualization and Descheduler Operator versions.
 
 Run all commands from test-cases/01-scheduling-and-migration in Bash. Keep
 this administrator terminal open so its variables and evidence directory
@@ -69,7 +67,7 @@ Tools: `oc`, `jq`, and `virtctl` (console **?** > **Command Line Tools**).
 | `scheduling-lab.example.com/unsatisfiable` | must never exist | nobody |
 
 Console - node label: **Compute > Nodes** > node > **Actions > Edit labels** >
-`key=value` > **Save**; remove by clicking **x** on the chip > **Save**.
+type `key=value` > press **Enter** so it becomes a label > **Save**; remove only the test label by clicking **×** on its chip > **Save**.
 
 <a id="preflight"></a>
 
@@ -82,7 +80,13 @@ MachineConfigs or removing taints.
 
 Console: **Administration > Cluster Settings** (version); **Operators >
 Installed Operators** (newer consoles: **Ecosystem > Installed Operators**):
-OpenShift Virtualization and Kube Descheduler Operator show **Succeeded**.
+OpenShift Virtualization and Kube Descheduler Operator show **Succeeded**. Select their installation projects if needed: **openshift-cnv** and **openshift-kube-descheduler-operator**. In the project selector, turn on **Show default projects** to find them.
+
+![Locate the current version in Cluster Settings](images/prep-01-version.png)
+
+![Kube Descheduler Operator status](images/prep-02-descheduler-operator.png)
+
+![OpenShift Virtualization operator status](images/prep-03-virtualization-operator.png)
 
 ```sh
 oc get clusterversion version -o jsonpath='{.status.desired.version}{"\n"}'
@@ -123,7 +127,13 @@ oc auth can-i create datavolumes.cdi.kubevirt.io --subresource=source -n openshi
 Expected: `Ready=True`; the clone permission check prints `yes`.
 
 Resolve the DataSource's actual source before using the default 40Gi target disk.
-The console's Bootable volume details link to its source PVC or VolumeSnapshot.
+Open **rhel9** and check the **Ready** badge. Under **Source**, click its PVC or VolumeSnapshot link.
+
+![RHEL boot-source readiness and source link](images/prep-04-boot-source.png)
+
+The source PVC details show **Status**, **Requested capacity**, **Capacity**, **Access modes** and **Volume mode**. Read **Capacity** before choosing the target disk size.
+
+![Read the source PVC capacity before choosing a disk size](images/prep-05-source-capacity.png)
 For the normal PVC-backed source, copy its name/namespace from the first command:
 
 ```sh
@@ -145,7 +155,9 @@ provider's filesystem/clone overhead in the capacity plan.
 ### 1.3 RWX storage
 
 Console: **Storage > StorageClasses** > `$RWX_SC`; **Storage > StorageProfiles**
-(if shown) lists ReadWriteMany / Filesystem.
+(if shown) lists ReadWriteMany / Filesystem. Read **Volume binding mode** on the StorageClass details page: it determines when to wait in section 2.4.
+
+![Find the storage binding mode](images/prep-06-storage-class.png)
 
 ```sh
 oc get storageclass "$RWX_SC" -o jsonpath='{.provisioner}{" binding="}{.volumeBindingMode}{"\n"}'
@@ -162,6 +174,8 @@ first starts.
 ### 1.4 Nodes and compute headroom
 
 Console: **Compute > Nodes**: NODE_A/B/C **Ready**, no lab labels.
+
+![Compare the Ready status of the agreed workers](images/prep-07-ready-nodes.png)
 
 ```sh
 oc get nodes $NODE_A $NODE_B $NODE_C -L kubevirt.io/schedulable -L kubernetes.io/arch
@@ -208,8 +222,9 @@ incomplete, and an incomplete inventory is a stop (have a cluster admin run
 it). Allowed content: the five VMs and their VMIs, launcher/CDI pods,
 DataVolumes, PVCs, migrations, plus the namespace's automatic objects
 (default ServiceAccounts and their secrets, `kube-root-ca.crt` and
-`openshift-service-ca.crt`, default RoleBindings). Never reuse a foreign
-namespace or PriorityClass.
+`openshift-service-ca.crt`, default RoleBindings). VM-owned ControllerRevisions and events from these test resources are also expected.
+
+Installed platform operators can inject other automatic objects, such as service accounts, CA ConfigMaps or RoleBindings. Verify their owner references or documented injection labels. Copied operator entries must have **olm.copiedFrom**; catalog PackageManifests are projected catalog entries. These do not mean an operator was installed in the test project. Do not remove the original operator installation. An unexplained object is a stop; do not allow it merely because its kind looks familiar. Never reuse a foreign namespace or PriorityClass.
 
 ### 1.6 Pod priority inventory (protects every non-lab workload)
 
@@ -270,65 +285,129 @@ virtualmachineinstances.subresources.kubevirt.io --subresource=console`.
 
 ## 2. Create the lab
 
-### 2.1 Namespace
+### 2.1 Create the namespace
 
-- Console: top bar **+** (Import YAML) > paste `manifests/00-namespace.yaml` > **Create**.
-- CLI:
-  ```sh
-  oc create -f manifests/00-namespace.yaml
-  oc get namespace $NS -o jsonpath='{.metadata.uid}{"\n"}' | tee "$LAB_EVIDENCE/namespace-uid.txt"
-  ```
-- Expected: **Home > Projects** lists `virt-scheduling-lab`; UID recorded.
+1. Open [00-namespace.yaml](manifests/00-namespace.yaml) and copy its full contents.
+2. In the console's top bar, click **+ → Import YAML**.
+3. Click inside the editor and paste the YAML. Replace any sample text already there.
+4. Click **Create**. The namespace details page should show **virt-scheduling-lab — Active**.
 
-### 2.2 Reserved PriorityClass
+![Open Import YAML from the plus menu](images/prep-09-quick-create.png)
 
-- Console: **+** (Import YAML) > paste `priorityclass/virt-scheduling-lab-evictable.yaml` > **Create**.
-- CLI:
-  ```sh
-  oc create -f priorityclass/virt-scheduling-lab-evictable.yaml
-  oc get priorityclass $PC -o jsonpath='{.metadata.uid}{" value="}{.value}{" globalDefault="}{.globalDefault}{" preemption="}{.preemptionPolicy}{"\n"}' \
-    | tee "$LAB_EVIDENCE/priorityclass-uid.txt"
-  ```
-- Expected: value `-1000000000`, globalDefault not true (the server may omit false), and `preemption=Never`; UID recorded.
-  Console: **Home > Search** > `PriorityClass` > `virt-scheduling-lab-evictable`.
+![Import the namespace definition](images/prep-10-import-namespace.png)
 
-### 2.3 VMs (after replacing the storage class)
+![The namespace is Active after creation](images/prep-11-namespace-created.png)
 
-- Console: select project `virt-scheduling-lab` > **+** (Import YAML) > paste
-  `01-placement-vm.yaml`, change `storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS`
-  to the client class, **Create**. Repeat for `02-spread-vms.yaml` (three
-  occurrences) and `03-negative-unsatisfiable-vm.yaml`.
-- CLI:
-  ```sh
-  for f in manifests/01-placement-vm.yaml manifests/02-spread-vms.yaml manifests/03-negative-unsatisfiable-vm.yaml; do
-    sed "s/REPLACE_WITH_RWX_STORAGE_CLASS/$RWX_SC/g" "$f" > "$LAB_EVIDENCE/$(basename "$f")"
-  done
-  grep -l REPLACE_WITH "$LAB_EVIDENCE"/0*.yaml && echo "PLACEHOLDER LEFT - stop"
-  oc create -f "$LAB_EVIDENCE/01-placement-vm.yaml" -f "$LAB_EVIDENCE/02-spread-vms.yaml" \
-            -f "$LAB_EVIDENCE/03-negative-unsatisfiable-vm.yaml"
-  oc get vm -n $NS
-  ```
-- Expected: five VMs, all **Stopped** (`Halted`), no VMI.
+Record the new namespace UID in your private evidence folder. Namespace creation is cluster-wide; the project selected before this step does not change the name in the YAML.
 
-![Prepared VM definitions should all be stopped](images/06-all-stopped.png)
+<details>
+<summary>Equivalent CLI and identity check</summary>
+
+~~~sh
+oc create -f manifests/00-namespace.yaml
+oc get namespace $NS -o jsonpath='{.metadata.uid}{"\n"}' | tee "$LAB_EVIDENCE/namespace-uid.txt"
+~~~
+
+After a console creation, run only the second command. The same rule applies to the alternatives below: create once, then use the read-only check.
+
+</details>
+
+### 2.2 Create the reserved PriorityClass
+
+1. Open [virt-scheduling-lab-evictable.yaml](priorityclass/virt-scheduling-lab-evictable.yaml) and copy its full contents.
+2. Open **+ → Import YAML**, paste it into the editor, then **Create**.
+3. On the new PriorityClass page, open **YAML** to read the values. Do not edit them.
+
+**Check:** name **virt-scheduling-lab-evictable**, value **-1000000000**, **preemptionPolicy: Never**. **globalDefault** must be false or absent; the server can omit false.
+
+![Import the reserved PriorityClass](images/prep-12-import-priority.png)
+
+To find it again, use **Home → Search**, choose the **PriorityClass** resource, then open **virt-scheduling-lab-evictable → YAML**. Record its UID privately.
+
+<details>
+<summary>Equivalent CLI and identity check</summary>
+
+~~~sh
+oc create -f priorityclass/virt-scheduling-lab-evictable.yaml
+oc get priorityclass $PC -o jsonpath='{.metadata.uid}{" value="}{.value}{" globalDefault="}{.globalDefault}{" preemption="}{.preemptionPolicy}{"\n"}' \
+  | tee "$LAB_EVIDENCE/priorityclass-uid.txt"
+~~~
+
+</details>
+
+### 2.3 Create the five VMs and their disks
+
+Use the RWX storage class agreed in preflight. Keep **runStrategy: Halted** so these VMs do not start during creation.
+
+1. Select project **virt-scheduling-lab**. Open **+ → Import YAML**.
+2. Copy and paste [01-placement-vm.yaml](manifests/01-placement-vm.yaml).
+3. Change the value of **storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS** to your agreed class. If section 1.2 required a larger disk, change **storage: 40Gi** too. Leave the other settings unchanged.
+4. Click **Create**. The VM page opens. **Provisioning** is normal while its disk is cloning; it becomes **Stopped** afterward.
+
+![Check the project, VM name, Halted strategy and disk settings before Create](images/prep-14-placement-yaml.png)
+
+5. Open **+ → Import YAML** again. Paste the whole [02-spread-vms.yaml](manifests/02-spread-vms.yaml), including the **---** separators. It contains three VMs.
+6. Change **all three storageClassName settings**, and all three disk sizes if required, then **Create**. Check that **spread-01**, **spread-02** and **spread-03** each show **Created**.
+
+![One import creates all three spread VMs](images/prep-17-spread-created.png)
+
+7. On that results page, click **Import more YAML**. Paste [03-negative-unsatisfiable-vm.yaml](manifests/03-negative-unsatisfiable-vm.yaml), change its storage class and disk size if required, then **Create**.
+8. Open **Virtualization → VirtualMachines → Virtual machines**. Close a welcome dialog if it appears. Check that all five names are present. Finish the disk checks below before handoff.
+
+**Tip:** the editor's **Ctrl+H** opens Find/Replace. Search for the complete **storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS** setting and use **Replace All** with **storageClassName: your-agreed-class**. This targets the actual settings, not placeholder text in comments. Keep YAML indentation unchanged. If a create fails, read the error and inspect what was created before retrying; do not submit an entire batch again blindly.
+
+<details>
+<summary>Equivalent CLI</summary>
+
+~~~sh
+for f in manifests/01-placement-vm.yaml manifests/02-spread-vms.yaml manifests/03-negative-unsatisfiable-vm.yaml; do
+  sed "s/REPLACE_WITH_RWX_STORAGE_CLASS/$RWX_SC/g" "$f" > "$LAB_EVIDENCE/$(basename "$f")"
+done
+grep -l REPLACE_WITH "$LAB_EVIDENCE"/0*.yaml && echo "PLACEHOLDER LEFT - stop"
+# If section 1.2 requires larger disks, edit all five disk requests in these private copies first.
+oc create -f "$LAB_EVIDENCE/01-placement-vm.yaml" -f "$LAB_EVIDENCE/02-spread-vms.yaml" \
+          -f "$LAB_EVIDENCE/03-negative-unsatisfiable-vm.yaml"
+oc get vm -n $NS
+~~~
+
+</details>
 
 ### 2.4 Wait for the root-disk clones
 
-Console: VM provisioning progress and **Storage → PersistentVolumeClaims**
-show the clone status. Use the storage class's binding mode to choose the path.
+Use the storage class's **Volume binding mode** from section 1.3:
 
 | Binding mode | When to wait |
 | --- | --- |
-| Immediate | Wait for the clones now, before handing over the Stopped VMs. |
-| WaitForFirstConsumer | Start the relevant VM in the customer test to trigger population, then wait for its clone before evaluating that test. Do not run the all-VM wait below while every VM is Stopped. |
+| Immediate | Wait for all five clones now, before handing over the Stopped VMs. |
+| WaitForFirstConsumer | Start the relevant VM in the customer test to trigger population, then wait for its clone before evaluating that test. Do not wait for every clone while all VMs are Stopped. |
 
-Read the state:
+**In the console:**
+
+1. Open **Storage → PersistentVolumeClaims** in project **virt-scheduling-lab**. The five **\*-rootdisk** claims should become **Bound** after population.
+2. Open **placement-01-rootdisk**. On **Details**, check **Access modes: ReadWriteMany** and **Volume mode: Filesystem**. Repeat for the other four claims.
+3. Under **Owner**, click the **DataVolume** link with the same name. Check the **Succeeded** badge and **Ready=True** condition. **Running=False / Completed / Clone Complete** means the clone finished successfully.
+4. Click the **DataVolumes** breadcrumb to compare all five clones. After population, each should show **Succeeded** and **100.0%**.
+
+![Five new disk claims become Bound](images/prep-19-fresh-disks-bound.png)
+
+![PVC details show RWX access and Filesystem mode](images/prep-20-rwx-filesystem.png)
+
+![Compare completion for all five DataVolumes](images/prep-22-all-clones-complete.png)
+
+The negative-test VM has no schedulable worker, so its disk can legitimately remain unpopulated with **WaitForFirstConsumer**. Do not treat that as a failed clone or relax its impossible scheduling rule.
+
+**Handoff:** return to the VM list. All five VMs should show **Stopped**, and their disks should be ready as described above. No test labels should be on the workers yet. **Ready=False** or **LiveMigratable=False** can appear while a VM is Stopped; evaluate those VM conditions after starting it. Use the disk checks above for the stopped handoff. The guest-agent and console checks happen after the first start, as described in the walkthrough and section 3 below.
+
+![Five stopped VM definitions ready for the walkthrough](images/prep-24-ready-for-handoff.png)
+
+<details>
+<summary>Read-only CLI disk checks</summary>
 
 ~~~sh
 oc get dv,pvc -n "$NS"
 ~~~
 
-For Immediate binding only:
+For **Immediate** binding only:
 
 ~~~sh
 for vm in $LAB_VMS; do
@@ -336,16 +415,13 @@ for vm in $LAB_VMS; do
 done
 ~~~
 
-For WaitForFirstConsumer, wait per VM after it is started. For example:
+For **WaitForFirstConsumer**, wait per VM after it is started, for example:
 
 ~~~sh
 oc wait dv/placement-01-rootdisk -n "$NS" --for=condition=Ready --timeout=30m
 ~~~
 
-Expected after population: DataVolume Succeeded, PVC Bound and RWX.
-The negative-test VM has no schedulable worker, so its disk can legitimately
-remain unpopulated with WaitForFirstConsumer. Do not interpret that as a
-failed clone or relax its impossible scheduling rule.
+</details>
 
 <a id="running-vm-checks"></a>
 
@@ -367,6 +443,10 @@ Require Ready, LiveMigratable and AgentConnected True, priority -1000000000,
 and class virt-scheduling-lab-evictable. Record VM and running-instance UIDs
 before the policy test using section 7.8. If checking the guest account,
 the POC cloud-user must not have passwordless sudo.
+
+For a first-boot check, open **placement-01 → Console**, choose **Serial console** from the console dropdown, click inside the terminal and press **Enter**. Allow cloud-init a few minutes to finish. The prepared guest logs in as **cloud-user**. Run `id` to confirm the user; `sudo -n -l` must not grant passwordless privileges. A password-required or not-allowed result is expected. Stop if it grants passwordless access.
+
+![Fresh guest serial console with an unprivileged user](images/prep-23-first-boot-console.png)
 
 ## 7. Administrator checkpoints for automatic migration
 
@@ -752,7 +832,10 @@ Root disks are kept between takes (guest changes persist; boot_id changes on eac
    oc get dv,pvc -n $NS        # wait until empty
    ```
    Console: **Virtualization > VirtualMachines** > each VM > **Actions >
-   Delete** (keep "delete disks" selected); **Storage > PersistentVolumeClaims** is empty.
+   Delete**. In the confirmation dialog, keep each listed test **DataVolume** selected, then click **Delete**; **Storage > PersistentVolumeClaims** is empty.
+
+   ![Confirm deletion of the test VM and its selected DataVolume](images/prep-08-delete-owned-vm.png)
+
    If any `*-rootdisk` PVC remains, check its ownerReferences, then delete it by name.
    PVC API deletion does not by itself prove backend data erasure. Storage
    cleanup follows the PV reclaim policy and CSI provider. With `Delete`,
@@ -805,7 +888,7 @@ Root disks are kept between takes (guest changes persist; boot_id changes on eac
 
 ## Reference map for older YAML comments
 
-The YAML and patch files are unchanged. Comments that say “RUNBOOK section …”
+The resource settings and patches are unchanged. Comments that say “RUNBOOK section …”
 use the earlier numbering. Those administrator sections are preserved here:
 
 | Earlier reference | Read now |

@@ -14,7 +14,7 @@
 # Starts Halted. The root-disk DataVolume may start cloning as soon as the VM
 # exists (or on first start with a WaitForFirstConsumer StorageClass); wait for
 # it to be Succeeded / its PVC Bound before starting (RUNBOOK 2.4).
-# Start: console Actions > Start, or
+# Start: console Actions > Control > Start, or
 #   oc patch vm placement-01 -n virt-scheduling-lab --type merge -p '{"spec":{"runStrategy":"Always"}}'
 #
 # Placement: the requiredDuringScheduling nodeAffinity on
