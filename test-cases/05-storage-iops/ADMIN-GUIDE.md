@@ -179,7 +179,13 @@ Use only if no existing VM suits and the owner approves. `optional/01-storage-vm
 one root disk, `runStrategy: Halted`, cloud-init under 2048 bytes with no helper, and a dedicated unprivileged
 `poc-user` with `sudo: false` and no password (the image must not give that user sudo). It is a template; no
 provisioning of it has been run, so verify it on the installed version. The image must already contain
-`python3` and `fio`, and optionally `poc-fio`. Replace every `REPLACE_*` first.
+`python3` and `fio`, and optionally `poc-fio`. Replace the remaining `REPLACE_*`
+image DataSource values first. The new disk uses **vxflexos / Block / ReadWriteMany**.
+In **Storage → StorageClasses**, check **vxflexos** and its StorageProfile support
+this combination. Have the storage administrator confirm the image can be populated
+into it. After population, open its PVC and check **Bound**, **vxflexos**, **Block**,
+and **ReadWriteMany**. Stop on unsupported storage or clone errors. Existing VMs
+can keep their current storage; do not convert their bound PVCs in place.
 
 ~~~sh
 oc get namespace perf-storage-lab

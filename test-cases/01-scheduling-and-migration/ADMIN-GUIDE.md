@@ -50,7 +50,7 @@ export PC=virt-scheduling-lab-evictable
 export THRESHOLD=-999999999
 # Replace with the client's approved values:
 export NODE_A='worker-a' NODE_B='worker-b' NODE_C='worker-c'
-export RWX_SC='replace-with-rwx-storage-class'
+export RWX_SC='vxflexos'
 export LAB_EVIDENCE="$HOME/virt-lab-evidence-$(date +%Y%m%d-%H%M%S)"   # private, never in Git
 mkdir -p "$LAB_EVIDENCE"
 printf '%s\n' "$NODE_A" "$NODE_B" "$NODE_C" > "$LAB_EVIDENCE/approved-nodes.txt"
@@ -152,10 +152,10 @@ cannot be resolved or is not ready. Its capacity/restore size must fit the
 **all five** disk requests before applying the YAML. Allow the storage
 provider's filesystem/clone overhead in the capacity plan.
 
-### 1.3 RWX storage
+### 1.3 Shared block storage
 
 Console: **Storage > StorageClasses** > `$RWX_SC`; **Storage > StorageProfiles**
-(if shown) lists ReadWriteMany / Filesystem. Read **Volume binding mode** on the StorageClass details page: it determines when to wait in section 2.4.
+(if shown) lists **ReadWriteMany / Block** for **vxflexos**. Read **Volume binding mode** on the StorageClass details page: it determines when to wait in section 2.4.
 
 ![Find the storage binding mode](images/prep-06-storage-class.png)
 
@@ -165,7 +165,16 @@ oc get storageprofile "$RWX_SC" -o jsonpath='{.status.claimPropertySets}{" clone
 ```
 
 Expected: the class exists; `claimPropertySets` includes `ReadWriteMany` with
-`Filesystem`. Five root disks = 5 x 40 GiB = **200 GiB guest disk requests**; confirm with
+`Block`. Confirm the class uses the PowerFlex block driver and the installed driver supports
+RWX raw-block volumes. Do not enable filesystem sharing or change the StorageProfile
+to advertise a capability the driver does not provide.
+
+The approved image source must also support population into this target class and
+mode. If CSI or snapshot cloning cannot cross the source/target storage types,
+the storage administrator must confirm a supported CDI copy path before creation.
+Stop on clone errors; do not switch to RWO to bypass them.
+
+Five root disks = 5 x 40 GiB = **200 GiB guest disk requests**; confirm with
 the storage owner that capacity plus provisioner headroom is available (a
 `copy`/host-assisted clone writes the full image per disk; snapshot or CSI
 clones may be thin). With `WaitForFirstConsumer`, clones start only when a VM
@@ -337,33 +346,38 @@ oc get priorityclass $PC -o jsonpath='{.metadata.uid}{" value="}{.value}{" globa
 
 ### 2.3 Create the five VMs and their disks
 
-Use the RWX storage class agreed in preflight. Keep **runStrategy: Halted** so these VMs do not start during creation.
+The supplied YAML already uses **storageClassName: vxflexos**,
+**volumeMode: Block**, and **accessModes: [ReadWriteMany]**. Confirm these
+settings in preflight. Keep **runStrategy: Halted** so these VMs do not start during creation.
 
 1. Select project **virt-scheduling-lab**. Open **+ → Import YAML**.
 2. Copy and paste [01-placement-vm.yaml](manifests/01-placement-vm.yaml).
-3. Change the value of **storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS** to your agreed class. If section 1.2 required a larger disk, change **storage: 40Gi** too. Leave the other settings unchanged.
+3. Keep **storageClassName: vxflexos**, **volumeMode: Block**, and **ReadWriteMany**. If section 1.2 required a larger disk, change **storage: 40Gi** too. Leave the other settings unchanged.
 4. Click **Create**. The VM page opens. **Provisioning** is normal while its disk is cloning; it becomes **Stopped** afterward.
 
-![Check the project, VM name, Halted strategy and disk settings before Create](images/prep-14-placement-yaml.png)
+The image below illustrates the import editor using an alternate storage
+configuration. Use the supplied **vxflexos / Block / ReadWriteMany** settings.
+
+![Locate the project, VM name, Halted strategy and disk settings before Create](images/prep-14-placement-yaml.png)
 
 5. Open **+ → Import YAML** again. Paste the whole [02-spread-vms.yaml](manifests/02-spread-vms.yaml), including the **---** separators. It contains three VMs.
-6. Change **all three storageClassName settings**, and all three disk sizes if required, then **Create**. Check that **spread-01**, **spread-02** and **spread-03** each show **Created**.
+6. Confirm the same three storage settings on **all three VMs**. Change all three disk sizes if required, then **Create**. Check that **spread-01**, **spread-02** and **spread-03** each show **Created**.
 
 ![One import creates all three spread VMs](images/prep-17-spread-created.png)
 
-7. On that results page, click **Import more YAML**. Paste [03-negative-unsatisfiable-vm.yaml](manifests/03-negative-unsatisfiable-vm.yaml), change its storage class and disk size if required, then **Create**.
+7. On that results page, click **Import more YAML**. Paste [03-negative-unsatisfiable-vm.yaml](manifests/03-negative-unsatisfiable-vm.yaml), confirm the same storage settings and adjust its disk size if required, then **Create**.
 8. Open **Virtualization → VirtualMachines → Virtual machines**. Close a welcome dialog if it appears. Check that all five names are present. Finish the disk checks below before handoff.
 
-**Tip:** the editor's **Ctrl+H** opens Find/Replace. Search for the complete **storageClassName: REPLACE_WITH_RWX_STORAGE_CLASS** setting and use **Replace All** with **storageClassName: your-agreed-class**. This targets the actual settings, not placeholder text in comments. Keep YAML indentation unchanged. If a create fails, read the error and inspect what was created before retrying; do not submit an entire batch again blindly.
+**If your approved class has a different name:** change **storageClassName** on all five disks before creation. Keep **Block** and **ReadWriteMany**. Keep YAML indentation unchanged. If a create fails, inspect what was created before retrying; do not submit an entire batch again blindly.
 
 <details>
 <summary>Equivalent CLI</summary>
 
 ~~~sh
 for f in manifests/01-placement-vm.yaml manifests/02-spread-vms.yaml manifests/03-negative-unsatisfiable-vm.yaml; do
-  sed "s/REPLACE_WITH_RWX_STORAGE_CLASS/$RWX_SC/g" "$f" > "$LAB_EVIDENCE/$(basename "$f")"
+  cp "$f" "$LAB_EVIDENCE/$(basename "$f")"
 done
-grep -l REPLACE_WITH "$LAB_EVIDENCE"/0*.yaml && echo "PLACEHOLDER LEFT - stop"
+# If the approved class differs, edit storageClassName in all five private disk definitions.
 # If section 1.2 requires larger disks, edit all five disk requests in these private copies first.
 oc create -f "$LAB_EVIDENCE/01-placement-vm.yaml" -f "$LAB_EVIDENCE/02-spread-vms.yaml" \
           -f "$LAB_EVIDENCE/03-negative-unsatisfiable-vm.yaml"
@@ -371,6 +385,11 @@ oc get vm -n $NS
 ~~~
 
 </details>
+
+Existing disks do not change when you edit a VM template. Do not try to convert
+a bound PVC in place. Keep suitable existing VMs unchanged. If a disposable test
+VM needs a different disk, use the ownership-checked cleanup procedure and
+create a new disk after preserving anything needed.
 
 ### 2.4 Wait for the root-disk clones
 
@@ -384,13 +403,17 @@ Use the storage class's **Volume binding mode** from section 1.3:
 **In the console:**
 
 1. Open **Storage → PersistentVolumeClaims** in project **virt-scheduling-lab**. The five **\*-rootdisk** claims should become **Bound** after population.
-2. Open **placement-01-rootdisk**. On **Details**, check **Access modes: ReadWriteMany** and **Volume mode: Filesystem**. Repeat for the other four claims.
+2. Open **placement-01-rootdisk**. On **Details**, check **Access modes: ReadWriteMany** and **Volume mode: Block** and **StorageClass: vxflexos**. Repeat for the other four claims.
 3. Under **Owner**, click the **DataVolume** link with the same name. Check the **Succeeded** badge and **Ready=True** condition. **Running=False / Completed / Clone Complete** means the clone finished successfully.
 4. Click the **DataVolumes** breadcrumb to compare all five clones. After population, each should show **Succeeded** and **100.0%**.
 
 ![Five new disk claims become Bound](images/prep-19-fresh-disks-bound.png)
 
-![PVC details show RWX access and Filesystem mode](images/prep-20-rwx-filesystem.png)
+The screenshot below shows where to find the fields using an alternate
+filesystem-backed example. **For these templates, require Block and vxflexos;
+Filesystem is not the expected result.**
+
+![Locate access modes and volume mode in PVC details; alternate filesystem example](images/prep-20-rwx-filesystem.png)
 
 ![Compare completion for all five DataVolumes](images/prep-22-all-clones-complete.png)
 
@@ -654,13 +677,19 @@ background flag and threshold). If it fails, stop and review with the owner;
 do not edit guards or guess server defaults. Console alternative: compare the
 five fields with the 7.4 block first, then change only `mode` to `Automatic`.
 
-Expected: args no longer contain `--dry-run=true`. Watch (5-minute limit),
+Expected: args no longer contain `--dry-run=true`. Changing mode replaces the
+operand pod. **Capture the new pod's log while Automatic is active**, in a
+separate administrator terminal or console Logs tab. Returning to Predictive
+can delete that pod and its log. Keep the capture running while you return to
+Predictive; do not delay the return to collect evidence.
+
+Watch (5-minute limit),
 two terminals since `oc get -w` watches one type:
 
 ```sh
 oc get vmi placement-01 -n $NS -o wide -w
 oc get vmim -n $NS -w
-oc logs deploy/descheduler -n $DS_NS --since=10m | tee "$LAB_EVIDENCE/automatic-log.txt" \
+oc logs -f deploy/descheduler -n $DS_NS --since=10m | tee "$LAB_EVIDENCE/automatic-log.txt" \
   | grep -i -E 'placement-01|evict|evacuation'
 ```
 
@@ -930,3 +959,8 @@ are unchanged. CPU-load-aware balancing remains a separate optional topic.
   <https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/managing-vms>
 - OpenShift 4.22 Virtualization — managing VMs and console access:
   <https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/managing-vms>
+
+- Dell PowerFlex CSI features — raw-block access modes:
+  <https://dell.github.io/csm-docs/v3/csidriver/features/powerflex/>
+- OpenShift 4.22 Virtualization — volume and access modes:
+  <https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/installing>

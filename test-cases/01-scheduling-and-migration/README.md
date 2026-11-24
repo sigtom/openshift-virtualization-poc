@@ -37,7 +37,12 @@ is optional and outside this walkthrough.
 Target OpenShift version: **4.21.31**. Complete preflight against the installed
 Virtualization and Descheduler Operator versions before the session.
 
-Presenter verification of the **web console and video remains pending**.
+The preparation and all five console scenarios have been exercised with newly
+created VMs, including manual and automatic live migration, guest continuity,
+and restoration of the shared configuration. Screenshots illustrate the steps.
+The execution used alternate shared filesystem storage; **vxflexos / Block / RWX
+provisioning remains unverified**. Complete the storage preflight on the target
+cluster. Video recording remains pending.
 Keep completed results and environment evidence private.
 
 Technical configuration, Red Hat references, reset and disk cleanup are in

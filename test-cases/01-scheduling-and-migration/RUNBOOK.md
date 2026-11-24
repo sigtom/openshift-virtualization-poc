@@ -169,14 +169,17 @@ oc wait vmi/negative-01 -n "$NS" --for=delete --timeout=300s
 **In the web console**
 
 1. Add **scheduling-lab.example.com/eligible=true** to **Worker B**.
-2. Open **placement-01 → Actions → Migration → Compute**. Some versions call the menu **Migrate**.
-3. Leave **Automatically selected Node** selected and click **Migrate VirtualMachine**. Worker B is the only other eligible worker.
+2. Before the move, record the guest boot ID and uptime using the [serial-console steps below](#b-record-the-running-vms-identity). Keep them private.
+3. Open **placement-01 → Actions → Migration → Compute**. Some versions call the menu **Migrate**.
+4. Leave **Automatically selected Node** selected and click **Migrate VirtualMachine**. Worker B is the only other eligible worker.
 
    ![Choose compute migration from the Migration submenu](images/04-migration-menu.png)
 
    ![Confirm migration with an automatically selected target](images/04-migration-confirmation.png)
 
-**Check the result:** the VM briefly shows **Migrating**, then **Running on Worker B**. Its migration record shows **Succeeded**. To find it, open **Virtualization → VirtualMachines → Overview → Migration statuses → View all** in the test project. Compare **Source**, **Target** and **Status**. Wait for completion before continuing.
+**Check the result:** the VM briefly shows **Migrating**, then **Running on Worker B**. Its migration record shows **Succeeded**. To find it, open **Virtualization → VirtualMachines → Overview → Migration statuses → View all** in the test project. Compare **Source**, **Target** and **Status**. Reconnect to the serial console and run the same two commands. The boot ID must match and uptime must increase. Wait for completion before continuing.
+
+![Recheck the running guest after manual migration; boot ID and uptime redacted](images/04-guest-after-manual.png)
 
 <details>
 <summary>Equivalent CLI and checks</summary>
