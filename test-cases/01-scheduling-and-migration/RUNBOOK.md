@@ -211,7 +211,9 @@ Do not continue until the administrator confirms the checkpoint passed. The [adm
 
 ### B. Record the running VM's identity
 
-Open **placement-01 → Console**. Use the **VNC console** dropdown to choose **Serial console**. Wait for it to connect, click inside the black terminal area, and press **Enter**.
+1. Open **Workloads → Pods** and select project **virt-scheduling-lab**. This switches back from the operator project.
+2. Open **Virtualization → VirtualMachines → Virtual machines**.
+3. Open **placement-01 → Console**. Use the **VNC console** dropdown to choose **Serial console**. Wait for it to connect, click inside the black terminal area, and press **Enter**.
 
 ![Select Serial console from the console dropdown](images/04-console-selector.png)
 
@@ -278,7 +280,9 @@ oc get vmi placement-01 -n "$NS" -o wide
 
 ### D. Show the proposed move
 
-Open **Workloads → Deployments → descheduler → Pods**, click the **Running descheduler-… pod**, then open its **Logs** tab in project **openshift-kube-descheduler-operator**.
+1. Open **Workloads → Deployments**.
+2. Select project **openshift-kube-descheduler-operator**. Enable **Show default projects** in the project selector if needed.
+3. Open **descheduler → Pods**, click the **Running descheduler-… pod**, then open **Logs**.
 
 Allow two 30-second intervals. Look for **placement-01**, **RemovePodsViolatingNodeAffinity**, and a dry-run eviction message. Use **Search logs** to find **placement-01**; searching pauses the stream, so click **Resume stream** when finished.
 

@@ -683,14 +683,30 @@ separate administrator terminal or console Logs tab. Returning to Predictive
 can delete that pod and its log. Keep the capture running while you return to
 Predictive; do not delay the return to collect evidence.
 
-Watch (5-minute limit),
-two terminals since `oc get -w` watches one type:
+Use **three separate administrator terminals or tabs** for these commands.
+Set the same `NS`, `DS_NS` and `LAB_EVIDENCE` values from the administrator
+session in each terminal; use the same evidence directory. Each command keeps
+running until you press **Ctrl+C**. Keep the controller's YAML page open in
+the console so you can return to Predictive promptly. Stop the test after
+five minutes if no migration succeeds.
+
+**Terminal 1 — start log capture first**, after the new Automatic pod is ready:
+
+```sh
+oc logs -f deploy/descheduler -n $DS_NS --since=10m | tee "$LAB_EVIDENCE/automatic-log.txt" \
+  | grep -i -E 'placement-01|evict|evacuation'
+```
+
+**Terminal 2 — watch the VM's worker:**
 
 ```sh
 oc get vmi placement-01 -n $NS -o wide -w
+```
+
+**Terminal 3 — watch migration status:**
+
+```sh
 oc get vmim -n $NS -w
-oc logs -f deploy/descheduler -n $DS_NS --since=10m | tee "$LAB_EVIDENCE/automatic-log.txt" \
-  | grep -i -E 'placement-01|evict|evacuation'
 ```
 
 Expected: the log names the current `virt-launcher-placement-01-...` pod
@@ -917,8 +933,8 @@ Root disks are kept between takes (guest changes persist; boot_id changes on eac
 
 ## Reference map for older YAML comments
 
-The resource settings and patches are unchanged. Comments that say “RUNBOOK section …”
-use the earlier numbering. Those administrator sections are preserved here:
+Comments that say “RUNBOOK section …” use the earlier numbering.
+Use this table to find the matching administrator section:
 
 | Earlier reference | Read now |
 | --- | --- |
@@ -937,9 +953,10 @@ LongLifecycle's LowNodeUtilization strategy does not honor namespace inclusion,
 so the priority threshold is essential. Force-eviction annotations bypass the
 priority filter, which is why the complete inventory is repeated before Automatic.
 
-Only placement-01 uses the reserved class. The remaining VM and operator
-settings, snapshot/restore guards, 1/1 eviction limits and test stop conditions
-are unchanged. CPU-load-aware balancing remains a separate optional topic.
+Only placement-01 uses the reserved class. Scheduling rules, descheduler
+patches, snapshot/restore guards, 1/1 eviction limits and test stop conditions
+are unchanged. New-VM disk defaults now use **vxflexos / Block / ReadWriteMany
+(RWX)**. CPU-load-aware balancing remains a separate optional topic.
 
 ## References
 
