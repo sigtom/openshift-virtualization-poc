@@ -17,7 +17,7 @@ safe production oversubscription ratio.
 1. Open **Virtualization → VirtualMachines** and the project on your sheet.
 2. Open the **measured server** and **measured client**. Check their **Node** values
    match the sheet. A node is the host running a VM.
-3. Open each VM’s **Console** and log in with your existing guest account. The
+3. Open each VM’s **Console → Serial console** and log in with your existing guest account. The
    optional new test VMs log in automatically. Type commands inside these consoles.
 4. Keep each VM’s **Metrics** tab and the prepared host/network graphs open in
    separate tabs. Set their time range to cover your run.
@@ -26,6 +26,10 @@ safe production oversubscription ratio.
 Use the **server address on the sheet**. With the default network, the guest’s
 own address can differ from its reachable cluster address; do not guess from
 an address shown in the VM overview. The administrator supplies and verifies it.
+
+Paste **one command at a time** into the guest console, press **Enter**, and wait for
+its expected output before continuing. If the existing guest uses a different console,
+use the working console the administrator lists on your sheet.
 
 ## 2. Record a baseline
 
@@ -68,11 +72,14 @@ For each load level on the sheet:
    Replace the address. This starts **2 transfers**, each capped at **200 Mbit/s**,
    for at most **75 minutes**. The administrator sets the rates and number of
    competitors to reach the agreed load; these example rates may not fill the link.
-4. After two minutes, repeat the **same measured client command** three times.
+4. After two minutes, run `poc-net-load status` in each competitor client. Expect
+   the planned number of flows (for the example, `2 competitor flow(s) from this helper are running.`).
+   Repeat the **same measured client command** three times. Check that flow count
+   before every repeat; if it drops, stop and tell the administrator.
    Record the results and matching graph time windows.
 5. Run `poc-net-load stop` in each competitor client before changing load levels.
 
-**Expected:** `Started 2 tcp flow(s)` and `2 competitor flow(s) running` for the
+**Expected:** `Started 2 tcp flow(s)` and `2 competitor flow(s) from this helper are running.` for the
 example. When the shared link fills, throughput may fall or delay/retransmissions
 may rise. The administrator confirms the actual link utilization. A same-host
 test is only a control and does not demonstrate physical uplink oversubscription.
@@ -80,7 +87,8 @@ test is only a control and does not demonstrate physical uplink oversubscription
 ## 4. Check recovery and finish
 
 1. Stop competitor traffic with `poc-net-load stop` and competitor listeners with
-   `poc-iperf-server stop`. Check their status commands report zero processes.
+   `poc-iperf-server stop`. Run `poc-net-load status` in each competitor client and
+   `poc-iperf-server status` in each competitor server; expect zero flows/listeners.
 2. Wait five minutes, then repeat the measured baseline command three times.
 3. Stop the measured server’s listeners: `poc-iperf-server stop`.
 4. Leave existing VMs running. Give the results sheet to the administrator for

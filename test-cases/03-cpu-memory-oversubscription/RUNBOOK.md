@@ -18,7 +18,7 @@ capacity recommendation.
 1. Open **Virtualization → VirtualMachines** and select the project on your sheet.
 2. Open the **measured VM**: this runs the workload you will compare. Check its
    **Node** matches the sheet. A node is the physical host running the VM.
-3. Open its **Console** and log in with your existing guest account. The optional
+3. Open its **Console → Serial console** and log in with your existing guest account. The optional
    new test VMs log in automatically. Type commands here, inside the VM.
 4. Open the VM’s **Metrics** tab in another browser tab. Keep the administrator’s
    host CPU, memory and swap graphs open too, filtered to the test node.
@@ -26,6 +26,10 @@ capacity recommendation.
 **Expected:** the VMs are Running, their consoles work, and graphs show data.
 Keep existing VMs at their current size and location. Start optional new VMs
 only when the administrator says they are ready.
+
+Paste **one command at a time** into the guest console, press **Enter**, and wait for
+its expected output before continuing. If the existing guest uses a different console,
+use the working console the administrator lists on your sheet.
 
 ## 2. Record a baseline
 
@@ -52,13 +56,15 @@ if the sheet specifies one; keep its data size and users unchanged.
 
 1. Check that the **competitor VMs** on your sheet are Running on the **same Node**
    as the measured VM. These VMs provide the extra demand.
-2. Open each competitor’s **Console** and run:
+2. Open each competitor’s **Serial console** and run:
 
    ```sh
    poc-load start cpu 4500
    ```
 
-3. After two minutes, repeat the **CPU** measured command from step 2 three times.
+3. After two minutes, run `poc-load status` in each competitor; expect `RUNNING`.
+   Repeat the **CPU** measured command from step 2 three times. Before each repeat,
+   check the competitors still report `RUNNING`; otherwise stop and tell the administrator.
    Record its results and the same graph time windows.
 4. In each competitor console run `poc-load stop`.
 
@@ -80,7 +86,9 @@ change cluster settings.
    poc-load start mem 4500 50
    ```
 
-2. After two minutes, repeat the **memory** measured command from step 2 three times.
+2. After two minutes, run `poc-load status` in each competitor; expect `RUNNING`.
+   Repeat the **memory** measured command from step 2 three times. Before each repeat,
+   check the competitors still report `RUNNING`; otherwise stop and tell the administrator.
    Watch host memory and swap graphs as well as the measured results.
 3. Run `poc-load stop` in every competitor. Repeat for each approved load level.
 
@@ -92,7 +100,8 @@ synthetic bandwidth test does not replace an application working-set test.
 ## 5. Check recovery and finish
 
 1. Confirm every competitor reports `NOT running` after `poc-load status`.
-2. Wait five minutes, then repeat both baseline commands with the same settings.
+2. Wait five minutes, then repeat the CPU command **three times** and the memory command
+   **three times**, one run at a time, with the same settings.
 3. Record whether throughput and latency returned close to the baseline.
 4. Leave existing VMs running. Give the sheet to the administrator for
    [cleanup and restoration](ADMIN-GUIDE.md#reset).

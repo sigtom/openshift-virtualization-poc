@@ -34,7 +34,7 @@ Proposal: 5 min warm-up, 15 min measure, 3 repeats, all negotiable.
 Tools: `sysbench` (CPU benchmark), `stress-ng` (bounded competitor load that
 touches memory) and, optionally, HammerDB for a representative database
 workload. Guest helper commands (`poc-sysbench`, `poc-load`, `poc-stats`) are
-are kept in `guest-tools/` and installed in the VM image (or copied into an existing VM) so the console user only types short commands.
+kept in `guest-tools/` and installed in the VM image (or copied into an existing VM) so the console user only types short commands.
 
 ## Files
 

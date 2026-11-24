@@ -90,7 +90,7 @@ sizes and placement on the sheet.
 
 | Missing | Smallest change | Disruption |
 | --- | --- | --- |
-| helper commands | Copy the files in `guest-tools/` into one folder as an ordinary guest user (for example `~/poc-bin`), make them executable, and `export PATH="$HOME/poc-bin:$PATH"` | Guest only, **no restart**. Undo: delete the folder |
+| helper commands | Copy the files in `guest-tools/` into one folder as an ordinary guest user (for example `~/poc-bin`), make them executable, and `export PATH="$HOME/poc-bin:$PATH"` | Guest only, **no restart**. Undo: remove only copied helper files |
 | iperf3 | Install via the owner's approved package route (normally in RHEL 9 AppStream; verify). Record version | Guest only. Undo with the package manager |
 | Listener reachable | Listeners use ports 5201-5208 above 1024, so no root is needed to start them. If the **guest firewall** blocks them, the **owner** opens just those ports on the **server** VMs, for example `sudo firewall-cmd --add-port=5201-5208/tcp --add-port=5201-5208/udp` (runtime only, gone at reboot, which is the safest) | Guest only |
 | NetworkPolicy blocks | Ask the project owner to allow the test ports from the client VM for the window; remove afterwards | Project object, record and undo |
@@ -158,7 +158,8 @@ Actions → Edit labels.**
 Verify exactly the intended nodes carry each label:
 `oc get nodes -l perf-lab.example.com/net-server-host=true` and `…net-client-host=true`.
 Competitor VMs use the same labels so their flows share the same two hosts.
-Remove the labels at the end (Edit labels → remove the chip → **Save**).
+Before changing labels, record each original value privately. At the end, restore
+those values; remove a label only if it was absent before this case.
 
 <a id="plan"></a>
 
@@ -193,6 +194,10 @@ Remove the labels at the end (Edit labels → remove the chip → **Save**).
 <a id="create"></a>
 
 ## 7. Path B: create the lab
+
+After creation, record the name and `metadata.uid` of each VM, DataVolume, PVC and case Service
+privately (**VM → YAML**, or `oc get vm,dv,pvc,svc -n perf-network-lab -o yaml`).
+Keep this record for cleanup. Do not reuse a pre-existing object as a new one.
 
 Replace every `REPLACE_*` in the manifests (storage class, tool DataSource name and
 namespace). Disk size must be at least the source image. ReadWriteOnce Filesystem storage
@@ -272,12 +277,11 @@ Any **VM migration, restart, or node event** in the window invalidates the run.
 
 ## 9. Optional: storage over the network (fio)
 
-`fio` is **not** a network benchmark. Use it only to see how storage traffic behaves when it
-shares the link, and only with a **storage latency and IOPS** target agreed with the storage
-owner. It must write to **safe test files** on a mounted filesystem the owner approves,
-**never raw block devices**, at conservative size and a bounded runtime
-(`fio --name=t --filename=/path/approved/fio-test --size=1G --runtime=300 --time_based --rw=randrw --bs=4k --iodepth=4`).
-Record IOPS and latency percentiles separately from the iperf3 results. Delete the test file afterwards.
+`fio` is **not** a network benchmark. Storage-over-network testing is a separate,
+optional measurement with its own approved storage procedure, directory, size,
+duration and cleanup. Do not improvise a write command or reuse an existing file.
+This network walkthrough provides no storage write command. Record any separately
+approved storage results apart from the iperf3 results.
 
 <a id="reset"></a>
 
@@ -285,23 +289,31 @@ Record IOPS and latency percentiles separately from the iperf3 results. Delete t
 
 - Stop all flows: `poc-net-load stop` on every competitor client, `poc-iperf-server stop`
   on servers; wait 5 minutes between takes.
-- **Path A:** delete the guest tools folder and any packages installed through the owner's
-  route, close any firewall port you opened (runtime rules vanish at reboot), remove any
-  temporary NetworkPolicy, and confirm VM sizes and placement still match the sheet.
-  Nothing else was changed.
-- **Path B:** remove only what you created, after checking the project is the one you made:
+- **Path A (existing VMs):** remove only the exact helper files you copied for this
+  case. Keep any pre-existing tools and other files in `~/poc-bin`. Ask the owner
+  before removing packages. Confirm VM sizes and placement still match the sheet.
+- **Path B (new VMs):** save results first. Use **Virtualization → VirtualMachines**,
+  select project `perf-network-lab`, and delete only the named VMs you created
+  for this case. Check each name and UID against your private creation record
+  (**VM → YAML → metadata.uid**); a project label alone is not proof of ownership.
+  Delete associated disks only after the storage owner agrees. A `Retain` PV
+  keeps its data after PVC deletion; report it rather than deleting the PV yourself.
+
+CLI alternative, one verified object at a time (replace `NAME`):
 
 ~~~sh
-oc get ns perf-network-lab -o jsonpath='{.metadata.labels}{"\n"}'   # expect perf-lab.example.com/case=04
-oc delete vm --all -n perf-network-lab
-oc delete dv --all -n perf-network-lab
-oc delete svc --all -n perf-network-lab
-oc delete ns perf-network-lab
-oc label node WORKER perf-lab.example.com/net-server-host- perf-lab.example.com/net-client-host-
+oc get vm NAME -n perf-network-lab -o jsonpath='{.metadata.uid}{"\n"}'
+oc delete vm NAME -n perf-network-lab
+oc get dv,pvc,svc -n perf-network-lab
 ~~~
 
-  Console: delete each VM (tick delete disks), **Home → Projects →** the project **→
-  Delete**, and **Edit labels** on each node to remove the chips.
+If a DataVolume, PVC or case Service remains, verify its name and UID against the creation record,
+then delete only that named object. For Services, use **Networking → Services**,
+select the project, open the recorded Service and choose **Delete**. Keep the project; its owner can check all
+resource types before deciding whether to remove it. Never use `--all` for cleanup.
+Restore node labels to the values recorded before setup, using **Compute → Nodes →
+node → Actions → Edit labels**. Remove only labels this case added; preserve
+pre-existing labels. Undo only firewall/NetworkPolicy changes made for this test.
 
 <a id="sources"></a>
 

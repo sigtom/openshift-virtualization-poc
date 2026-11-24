@@ -98,7 +98,7 @@ resize VMs to reach a number: use fewer competitors, or Path B.
 
 | Missing | Smallest change | Disruption |
 | --- | --- | --- |
-| helper commands | Copy the files in `guest-tools/` into one folder as an ordinary guest user, for example `~/poc-bin`, make them executable and add that folder to `PATH` for the session (`export PATH="$HOME/poc-bin:$PATH"`). Typing the file contents with `cat > file` in the console works if copy is unavailable | Guest-only; **no VM restart**. Undo: delete the folder |
+| helper commands | Copy the files in `guest-tools/` into one folder as an ordinary guest user, for example `~/poc-bin`, make them executable and add that folder to `PATH` for the session (`export PATH="$HOME/poc-bin:$PATH"`). Typing the file contents with `cat > file` in the console works if copy is unavailable | Guest-only; **no VM restart**. Undo: remove only copied helper files |
 | sysbench / stress-ng | Install through the **owner's approved** package route | Guest-only install. Record what was installed; undo with the package manager |
 | console / guest access | Use access the owner already gives you; do not create new users or keys | none |
 
@@ -193,6 +193,9 @@ memory capped at 70% of free), but a wrong tool build is still a risk.
    **exactly one** node. To test another host later, move the label while all
    lab VMs are Stopped (the affinity is checked only at scheduling).
 
+Record the original `perf-lab.example.com/cpumem-host` label value (or absence)
+on each selected node before changing it; restore only that value at cleanup.
+
 <a id="capacity"></a>
 
 ## 6. Record capacity and derive the competitor count
@@ -230,6 +233,10 @@ approver on the sheet. If it exceeds the two shipped competitor manifests, make 
 <a id="create"></a>
 
 ## 7. Path B: create the lab
+
+After creation, record the name and `metadata.uid` of each VM, DataVolume, PVC and case Service
+privately (**VM → YAML**, or `oc get vm,dv,pvc -n perf-cpumem-lab -o yaml`).
+Keep this record for cleanup. Do not reuse a pre-existing object as a new one.
 
 Replace every `REPLACE_*` in `manifests/01-…` and `02-…` (storage class, tool
 DataSource name and namespace). Check the DataSource is Ready, the
@@ -382,25 +389,30 @@ This case never selects control-plane nodes.
   when doing an explicit reset, after stopping their loads. Record remaining
   host swap usage; it does not necessarily drain automatically.
 - **Restore** memory density and swap using appendix Step 8 (drain first, then roll back) and verify against your private backup.
-- **Path A (existing VMs):** run `poc-load stop` in every competitor, delete the guest
-  tools folder you added (for example `~/poc-bin`) and any packages you installed under the
-  owner's route, and confirm the VMs' sizes and placement still match the sheet. Nothing else
-  was changed, so nothing else needs restoring.
-- **Path B: remove the lab** (only after the results are saved and you have checked the
-  namespace is the one you created):
+- **Path A (existing VMs):** remove only the exact helper files you copied for this
+  case. Keep any pre-existing tools and other files in `~/poc-bin`. Ask the owner
+  before removing packages. Confirm VM sizes and placement still match the sheet.
+- **Path B (new VMs):** save results first. Use **Virtualization → VirtualMachines**,
+  select project `perf-cpumem-lab`, and delete only the named VMs you created
+  for this case. Check each name and UID against your private creation record
+  (**VM → YAML → metadata.uid**); a project label alone is not proof of ownership.
+  Delete associated disks only after the storage owner agrees. A `Retain` PV
+  keeps its data after PVC deletion; report it rather than deleting the PV yourself.
+
+CLI alternative, one verified object at a time (replace `NAME`):
 
 ~~~sh
-oc get ns perf-cpumem-lab -o jsonpath='{.metadata.labels}{"\n"}'   # expect perf-lab.example.com/case=03
-oc delete vm --all -n perf-cpumem-lab
-oc delete dv --all -n perf-cpumem-lab
-oc delete ns perf-cpumem-lab
-oc label node WORKER perf-lab.example.com/cpumem-host-
+oc get vm NAME -n perf-cpumem-lab -o jsonpath='{.metadata.uid}{"\n"}'
+oc delete vm NAME -n perf-cpumem-lab
+oc get dv,pvc -n perf-cpumem-lab
 ~~~
 
-Console equivalent: **Virtualization → VirtualMachines →** each VM **→ Delete**
-(tick *delete disks*), then **Home → Projects →** the project **→ Delete**, and
-**Edit labels** on the node to remove the label. Remove the temporary tool
-image access and confirm no PVCs remain.
+If a DataVolume or PVC remains, verify its name and UID against the creation record,
+then delete only that named object. Keep the project; its owner can check all
+resource types before deciding whether to remove it. Never use `--all` for cleanup.
+Restore node labels to the values recorded before setup, using **Compute → Nodes →
+node → Actions → Edit labels**. Remove only labels this case added; preserve
+pre-existing labels. Undo only firewall/NetworkPolicy changes made for this test.
 
 <a id="sources"></a>
 
