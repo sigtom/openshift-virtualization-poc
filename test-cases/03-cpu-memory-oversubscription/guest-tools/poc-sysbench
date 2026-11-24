@@ -1,0 +1,41 @@
+#!/bin/bash
+# usage: poc-sysbench cpu|memory [warmup_s=300] [measure_s=900] [threads=all vCPUs]
+# Fixed measured workload. Warm-up output is discarded; only the measure run counts.
+# Exit status: 0 = both runs finished; non-zero = do NOT record the numbers.
+set -o pipefail
+isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; }
+inrange() { isnum "$1" && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
+
+mode=${1:-}; warm=${2:-300}; meas=${3:-900}; thr=${4:-}
+usage() { echo "usage: poc-sysbench cpu|memory [warmup_s 0-1800] [measure_s 1-3600] [threads 1-256]"; exit 2; }
+case $mode in cpu|memory) ;; *) usage ;; esac
+[ -n "$thr" ] || thr=$(nproc)
+inrange "$warm" 0 1800 && inrange "$meas" 1 3600 && inrange "$thr" 1 256 || usage
+if ! command -v sysbench >/dev/null; then echo "BLOCKED: sysbench is not installed in this VM. Tell the administrator."; exit 2; fi
+here=$(cd "$(dirname "$0")" && pwd)
+stats() { if [ -f "$here/poc-stats" ]; then bash "$here/poc-stats"; else poc-stats; fi; }
+out=/var/tmp/poc-sysbench-$mode-$(date -u +%Y%m%dT%H%M%SZ).txt
+run() { # $1 = seconds, $2 = optional reporting option. --events=0 makes it time-limited only.
+  if [ "$mode" = cpu ]; then
+    timeout $(($1 + 60)) sysbench cpu --threads="$thr" --time="$1" --events=0 --percentile=95 $2 run
+  else
+    timeout $(($1 + 60)) sysbench memory --threads="$thr" --time="$1" --events=0 --memory-block-size=1M --memory-total-size=100T --percentile=95 $2 run
+  fi
+}
+{
+  echo "== settings: mode=$mode warmup=${warm}s measure=${meas}s threads=$thr"
+  echo "== before"; stats
+  if [ "$warm" -gt 0 ]; then
+    echo "== warm-up start $(date -u +%FT%TZ) (discard)"
+    if ! run "$warm" "" >"$out.warmup" 2>&1; then echo "FAILED: the warm-up run failed. Last lines:"; tail -n 5 "$out.warmup"; exit 1; fi
+  fi
+  echo "== measure start $(date -u +%FT%TZ)"
+  if ! run "$meas" "--report-interval=60"; then echo "FAILED: the measure run failed or timed out."; exit 1; fi
+  echo "== measure end $(date -u +%FT%TZ)"
+  echo "== after"; stats
+} 2>&1 | tee "$out"
+rc=${PIPESTATUS[0]}
+echo
+if [ "$rc" -ne 0 ]; then echo "RUN FAILED (exit $rc). Do not record these numbers. Log: $out"; exit "$rc"; fi
+echo "Saved: $out"
+echo "Record: events per second (cpu) or MiB/sec (memory), latency avg / 95th percentile / max."

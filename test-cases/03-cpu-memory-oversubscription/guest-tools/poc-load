@@ -1,0 +1,54 @@
+#!/bin/bash
+# Competitor load. usage: poc-load start cpu|mem [seconds=1800] [mem_percent=50] | stop | status
+# Always time-limited. It only ever stops processes IT started (pid + start time + command checked).
+# Memory mode keeps rewriting the memory it takes so the host must back it; it also keeps one vCPU busy.
+PIDS="${POC_STATE_DIR:-/var/tmp}/poc-load.pids"
+log="${POC_STATE_DIR:-/var/tmp}/poc-load.log"
+isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; }
+inrange() { isnum "$1" && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
+# Helper-owned process tracking: a process is ours only if its pid, its start time and its
+# command line all still match what was recorded. Nothing is ever stopped by name alone.
+pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
+owned() { [ -n "$3" ] && [ -n "$2" ] && [ "$(pstart "$1")" = "$2" ] && tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null | grep -q -- "$3"; }
+record() { echo "$1 $(pstart "$1") $2" >>"$PIDS"; }
+prune() {
+  [ -f "$PIDS" ] || return 0
+  tmp="$PIDS.tmp.$$"; : >"$tmp"
+  while read -r p s b; do owned "$p" "$s" "$b" && echo "$p $s $b" >>"$tmp"; done <"$PIDS"
+  if [ -s "$tmp" ]; then mv "$tmp" "$PIDS"; else rm -f "$tmp" "$PIDS"; fi
+}
+live_count() { prune; if [ -s "$PIDS" ]; then wc -l <"$PIDS" | tr -d ' '; else echo 0; fi; }
+stop_owned() {
+  prune
+  if [ ! -s "$PIDS" ]; then echo "Nothing started by this helper is running."; return 0; fi
+  while read -r p s b; do owned "$p" "$s" "$b" && { pkill -TERM -P "$p" 2>/dev/null; kill -TERM "$p" 2>/dev/null; }; done <"$PIDS"
+  sleep 2
+  while read -r p s b; do owned "$p" "$s" "$b" && { pkill -KILL -P "$p" 2>/dev/null; kill -KILL "$p" 2>/dev/null; }; done <"$PIDS"
+  rm -f "$PIDS"
+  echo "Stopped helper-started processes at $(date -u +%FT%TZ). Other processes were not touched."
+}
+case ${1:-} in
+  start)
+    kind=${2:-}; secs=${3:-1800}; pct=${4:-50}
+    case $kind in cpu|mem) ;; *) echo "usage: poc-load start cpu|mem [seconds 1-7200] [mem_percent 1-70]"; exit 2 ;; esac
+    if ! inrange "$secs" 1 7200 || ! inrange "$pct" 1 70; then echo "Refusing: seconds must be 1-7200 and mem_percent 1-70."; exit 2; fi
+    if ! command -v stress-ng >/dev/null; then echo "BLOCKED: stress-ng is not installed in this VM. Tell the administrator."; exit 2; fi
+    if [ "$(live_count)" -gt 0 ]; then echo "Already running. Run: poc-load stop"; exit 1; fi
+    if [ "$kind" = cpu ]; then
+      nohup stress-ng --cpu "$(nproc)" --timeout "${secs}s" --metrics-brief >"$log" 2>&1 &
+    else
+      nohup stress-ng --vm 1 --vm-bytes "${pct}%" --vm-keep --timeout "${secs}s" --metrics-brief >"$log" 2>&1 &
+    fi
+    record "$!" stress-ng
+    sleep "${POC_START_WAIT:-3}"
+    if [ "$(live_count)" -gt 0 ]; then
+      echo "Started $kind load for ${secs}s at $(date -u +%FT%TZ). Stop early with: poc-load stop"
+    else
+      echo "FAILED to start or exited at once. Last log lines:"; tail -n 5 "$log"; exit 1
+    fi ;;
+  stop) stop_owned ;;
+  status)
+    if [ "$(live_count)" -gt 0 ]; then echo "RUNNING (started by this helper)"; else echo "NOT running"; fi
+    tail -n 3 "$log" 2>/dev/null; true ;;
+  *) echo "usage: poc-load start cpu|mem [seconds] [mem_percent] | stop | status"; exit 2 ;;
+esac

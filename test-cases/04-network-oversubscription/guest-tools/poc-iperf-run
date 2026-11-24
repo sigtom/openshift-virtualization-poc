@@ -1,0 +1,44 @@
+#!/bin/bash
+# The measured flow. usage: poc-iperf-run tcp|tcp-rev|udp SERVER_POD_IP PORT [warmup_s=300] [measure_s=900] [udp_mbps=100]
+# tcp = client sends; tcp-rev = server sends (iperf3 -R); udp = fixed offered load.
+# Exit status: 0 = both runs finished; non-zero = do NOT record the numbers.
+set -o pipefail
+isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; }
+inrange() { isnum "$1" && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
+
+mode=${1:-}; srv=${2:-}; port=${3:-}; warm=${4:-300}; meas=${5:-900}; mbps=${6:-100}
+usage() { echo "usage: poc-iperf-run tcp|tcp-rev|udp SERVER_POD_IP PORT [warmup_s 0-1800] [measure_s 1-3600] [udp_mbps 1-10000]"; exit 2; }
+case $mode in tcp|tcp-rev|udp) ;; *) usage ;; esac
+case $srv in ''|-*|*[!A-Za-z0-9.:_-]*) echo "Server address missing or not valid."; usage ;; esac
+inrange "$port" 1 65535 && inrange "$warm" 0 1800 && inrange "$meas" 1 3600 && inrange "$mbps" 1 10000 || usage
+if ! command -v iperf3 >/dev/null; then echo "BLOCKED: iperf3 is not installed in this VM. Tell the administrator."; exit 2; fi
+IFACE=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+BIND=${POC_BIND:-$(ip -4 -o addr show dev "$IFACE" 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')}
+case $BIND in ''|*[!0-9.]*) echo "Could not find this VM's IPv4 address. Set it: export POC_BIND=<guest address from poc-net-info>"; exit 2 ;; esac
+args=(-c "$srv" -p "$port" -B "$BIND" -f m)
+[ "$mode" = tcp-rev ] && args+=(-R)
+[ "$mode" = udp ] && args+=(-u -b "${mbps}M" -l 1200)
+out=/var/tmp/poc-iperf-$mode-$(date -u +%Y%m%dT%H%M%SZ).txt
+{
+  echo "== settings: mode=$mode server=$srv port=$port bind=$BIND warmup=${warm}s measure=${meas}s udp_mbps=$mbps"
+  if [ "$warm" -gt 0 ]; then
+    echo "== warm-up start $(date -u +%FT%TZ) (discard)"
+    if ! timeout $((warm + 30)) iperf3 "${args[@]}" -t "$warm" -i 0 >"$out.warmup" 2>&1; then
+      echo "FAILED: could not run the test. Last lines:"; tail -n 3 "$out.warmup"
+      echo "Check: the address is the server's POD IP; its listener is running; the port is not used by another test."; exit 1
+    fi
+  fi
+  echo "== measure start $(date -u +%FT%TZ)"
+  ping -q -c "$meas" -i 1 -w $((meas + 5)) "$srv" >"$out.ping" 2>&1 &
+  pp=$!
+  if ! timeout $((meas + 60)) iperf3 "${args[@]}" -t "$meas" -i 30; then echo "FAILED: the measure run failed or timed out."; kill "$pp" 2>/dev/null; exit 1; fi
+  echo "== measure end $(date -u +%FT%TZ)"
+  wait "$pp"
+  echo "== ping RTT (separate from iperf3; answered by the pod network, may not reach the guest)"
+  tail -n 3 "$out.ping"
+} 2>&1 | tee "$out"
+rc=${PIPESTATUS[0]}
+echo
+if [ "$rc" -ne 0 ]; then echo "RUN FAILED (exit $rc). Do not record these numbers. Log: $out"; exit "$rc"; fi
+echo "Saved: $out"
+echo "Record from the sender/receiver lines: Mbits/sec at the RECEIVER (goodput), Retr (TCP retransmits); for UDP also Jitter and Lost/Total."
