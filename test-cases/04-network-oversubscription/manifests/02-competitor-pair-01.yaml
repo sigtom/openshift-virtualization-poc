@@ -1,0 +1,331 @@
+# Case 04 - NOT TESTED. Competitor pair 01, server side.
+#
+# OPTIONAL FALLBACK (Path B). Prefer suitable EXISTING VMs with no changes (case ADMIN-GUIDE,
+# "Path A"). Apply this file only when no suitable existing VM is available.
+# BEFORE APPLYING replace:
+#   REPLACE_STORAGE_CLASS         client StorageClass (ReadWriteOnce is enough; RWX only if you also
+#                                 want live migration, which this case does not use)
+#   REPLACE_DATASOURCE_NAME       the approved image DataSource that ALREADY contains the guest tools
+#   REPLACE_DATASOURCE_NAMESPACE  namespace of that DataSource
+# The disk must be at least as large as the source image. Starts Halted; nothing is labelled here.
+# The guest helper commands are NOT in this file: cloud-init user data is limited to 2048 bytes.
+# They come from the approved image (installed in /usr/local/bin) or are copied from guest-tools/
+# by an administrator (ADMIN-GUIDE). Running is not the same as ready: check the guest first.
+# Console user: the serial console auto-logs in as unprivileged cloud-user (no sudo, no password,
+# root and SSH password login disabled). Anyone allowed to open this VM's console gets that shell.
+# POC convenience only, not a production guest policy.
+#
+# Placement: servers REQUIRE node label perf-lab.example.com/net-server-host=true, clients REQUIRE perf-lab.example.com/net-client-host=true.
+# The administrator applies the labels (ADMIN-GUIDE section 5): both on one worker = same-host
+# CONTROL (cannot show physical uplink contention); on two workers = cross-host test.
+# Network: default pod network (masquerade). The interface lists the exact iperf3 ports the server
+# accepts (TCP+UDP). The guest firewall must also allow them on SERVER VMs (ADMIN-GUIDE 3.3):
+# bake it into the approved image or open it as the owner. Clients need no inbound port.
+# Listeners: poc-iperf-server start 5201 4 (one port per competitor flow)
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: netload-server-01
+  namespace: perf-network-lab
+  labels:
+    perf-lab.example.com/case: "04"
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: netload-server-01-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: REPLACE_DATASOURCE_NAME
+          namespace: REPLACE_DATASOURCE_NAMESPACE
+        storage:
+          storageClassName: REPLACE_STORAGE_CLASS
+          accessModes:
+            - ReadWriteOnce
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 30Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        perf-lab.example.com/case: "04"
+        perf-lab.example.com/vm: netload-server-01
+        kubevirt.io/domain: netload-server-01
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: perf-lab.example.com/net-server-host
+                    operator: In
+                    values:
+                      - "true"
+      terminationGracePeriodSeconds: 60
+      domain:
+        cpu:
+          sockets: 1
+          cores: 2
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+              ports:
+                - name: p5201-tcp
+                  port: 5201
+                  protocol: TCP
+                - name: p5201-udp
+                  port: 5201
+                  protocol: UDP
+                - name: p5202-tcp
+                  port: 5202
+                  protocol: TCP
+                - name: p5202-udp
+                  port: 5202
+                  protocol: UDP
+                - name: p5203-tcp
+                  port: 5203
+                  protocol: TCP
+                - name: p5203-udp
+                  port: 5203
+                  protocol: UDP
+                - name: p5204-tcp
+                  port: 5204
+                  protocol: TCP
+                - name: p5204-udp
+                  port: 5204
+                  protocol: UDP
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: netload-server-01-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            # Minimal on purpose (limit 2048 bytes). Explicit users list: no passwordless sudo.
+            userData: |
+              #cloud-config
+              hostname: netload-server-01
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  lock_passwd: true
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin cloud-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]
+---
+# OPTIONAL internal Service for netload-server-01. Type ClusterIP only: reachable inside the
+# cluster, never from outside. It selects ONLY this VM's launcher pod. The default
+# walkthrough does not use it (it targets the VM's pod IP). A Service adds a forwarding
+# step, so its results are not comparable with pod-IP runs; never mix them. It is NOT
+# the path of a secondary-network (direct NIC) test.
+apiVersion: v1
+kind: Service
+metadata:
+  name: netload-server-01
+  namespace: perf-network-lab
+  labels:
+    perf-lab.example.com/case: "04"
+spec:
+  type: ClusterIP
+  selector:
+    perf-lab.example.com/case: "04"
+    perf-lab.example.com/vm: netload-server-01
+  ports:
+    - name: p5201-tcp
+      port: 5201
+      targetPort: 5201
+      protocol: TCP
+    - name: p5201-udp
+      port: 5201
+      targetPort: 5201
+      protocol: UDP
+    - name: p5202-tcp
+      port: 5202
+      targetPort: 5202
+      protocol: TCP
+    - name: p5202-udp
+      port: 5202
+      targetPort: 5202
+      protocol: UDP
+    - name: p5203-tcp
+      port: 5203
+      targetPort: 5203
+      protocol: TCP
+    - name: p5203-udp
+      port: 5203
+      targetPort: 5203
+      protocol: UDP
+    - name: p5204-tcp
+      port: 5204
+      targetPort: 5204
+      protocol: TCP
+    - name: p5204-udp
+      port: 5204
+      targetPort: 5204
+      protocol: UDP
+---
+# Case 04 - NOT TESTED. Competitor pair 01, client side.
+#
+# OPTIONAL FALLBACK (Path B). Prefer suitable EXISTING VMs with no changes (case ADMIN-GUIDE,
+# "Path A"). Apply this file only when no suitable existing VM is available.
+# BEFORE APPLYING replace:
+#   REPLACE_STORAGE_CLASS         client StorageClass (ReadWriteOnce is enough; RWX only if you also
+#                                 want live migration, which this case does not use)
+#   REPLACE_DATASOURCE_NAME       the approved image DataSource that ALREADY contains the guest tools
+#   REPLACE_DATASOURCE_NAMESPACE  namespace of that DataSource
+# The disk must be at least as large as the source image. Starts Halted; nothing is labelled here.
+# The guest helper commands are NOT in this file: cloud-init user data is limited to 2048 bytes.
+# They come from the approved image (installed in /usr/local/bin) or are copied from guest-tools/
+# by an administrator (ADMIN-GUIDE). Running is not the same as ready: check the guest first.
+# Console user: the serial console auto-logs in as unprivileged cloud-user (no sudo, no password,
+# root and SSH password login disabled). Anyone allowed to open this VM's console gets that shell.
+# POC convenience only, not a production guest policy.
+#
+# Placement: servers REQUIRE node label perf-lab.example.com/net-server-host=true, clients REQUIRE perf-lab.example.com/net-client-host=true.
+# The administrator applies the labels (ADMIN-GUIDE section 5): both on one worker = same-host
+# CONTROL (cannot show physical uplink contention); on two workers = cross-host test.
+# Network: default pod network (masquerade). The interface lists the exact iperf3 ports the server
+# accepts (TCP+UDP). The guest firewall must also allow them on SERVER VMs (ADMIN-GUIDE 3.3):
+# bake it into the approved image or open it as the owner. Clients need no inbound port.
+# Runs poc-net-load; more pairs: scripts/render-competitor-pair.sh (ADMIN-GUIDE section 7).
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: netload-client-01
+  namespace: perf-network-lab
+  labels:
+    perf-lab.example.com/case: "04"
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: netload-client-01-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: REPLACE_DATASOURCE_NAME
+          namespace: REPLACE_DATASOURCE_NAMESPACE
+        storage:
+          storageClassName: REPLACE_STORAGE_CLASS
+          accessModes:
+            - ReadWriteOnce
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 30Gi
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        perf-lab.example.com/case: "04"
+        perf-lab.example.com/vm: netload-client-01
+        kubevirt.io/domain: netload-client-01
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: perf-lab.example.com/net-client-host
+                    operator: In
+                    values:
+                      - "true"
+      terminationGracePeriodSeconds: 60
+      domain:
+        cpu:
+          sockets: 1
+          cores: 2
+          threads: 1
+        memory:
+          guest: 2Gi
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: netload-client-01-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            # Minimal on purpose (limit 2048 bytes). Explicit users list: no passwordless sudo.
+            userData: |
+              #cloud-config
+              hostname: netload-client-01
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  lock_passwd: true
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin cloud-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]

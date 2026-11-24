@@ -1,0 +1,52 @@
+#!/bin/bash
+# usage: poc-iperf-server start [first_port=5201] [count=4] | stop | status
+# One iperf3 listener per port so tests can run at the same time. Only listeners started here are stopped.
+PIDS="${POC_STATE_DIR:-/var/tmp}/poc-iperf-server.pids"
+isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; }
+inrange() { isnum "$1" && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
+# Helper-owned process tracking: a process is ours only if its pid, its start time and its
+# command line all still match what was recorded. Nothing is ever stopped by name alone.
+pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
+owned() { [ -n "$3" ] && [ -n "$2" ] && [ "$(pstart "$1")" = "$2" ] && tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null | grep -q -- "$3"; }
+record() { echo "$1 $(pstart "$1") $2" >>"$PIDS"; }
+prune() {
+  [ -f "$PIDS" ] || return 0
+  tmp="$PIDS.tmp.$$"; : >"$tmp"
+  while read -r p s b; do owned "$p" "$s" "$b" && echo "$p $s $b" >>"$tmp"; done <"$PIDS"
+  if [ -s "$tmp" ]; then mv "$tmp" "$PIDS"; else rm -f "$tmp" "$PIDS"; fi
+}
+live_count() { prune; if [ -s "$PIDS" ]; then wc -l <"$PIDS" | tr -d ' '; else echo 0; fi; }
+stop_owned() {
+  prune
+  if [ ! -s "$PIDS" ]; then echo "Nothing started by this helper is running."; return 0; fi
+  while read -r p s b; do owned "$p" "$s" "$b" && { pkill -TERM -P "$p" 2>/dev/null; kill -TERM "$p" 2>/dev/null; }; done <"$PIDS"
+  sleep 2
+  while read -r p s b; do owned "$p" "$s" "$b" && { pkill -KILL -P "$p" 2>/dev/null; kill -KILL "$p" 2>/dev/null; }; done <"$PIDS"
+  rm -f "$PIDS"
+  echo "Stopped helper-started processes at $(date -u +%FT%TZ). Other processes were not touched."
+}
+case ${1:-} in
+  start)
+    first=${2:-5201}; count=${3:-4}
+    if ! inrange "$first" 1024 65535 || ! inrange "$count" 1 16 || [ $((first + count - 1)) -gt 65535 ]; then
+      echo "Refusing: first_port 1024-65535, count 1-16, last port at most 65535."; exit 2; fi
+    if ! command -v iperf3 >/dev/null; then echo "BLOCKED: iperf3 is not installed in this VM. Tell the administrator."; exit 2; fi
+    IFACE=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+    BIND=${POC_BIND:-$(ip -4 -o addr show dev "$IFACE" 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')}
+    case $BIND in ''|*[!0-9.]*) echo "Could not find this VM's IPv4 address. Set it: export POC_BIND=<guest address from poc-net-info>"; exit 2 ;; esac
+    prune
+    i=0
+    while [ "$i" -lt "$count" ]; do
+      p=$((first + i))
+      nohup iperf3 -s -B "$BIND" -p "$p" --logfile "${POC_STATE_DIR:-/var/tmp}/iperf3-server-$p.log" >/dev/null 2>&1 &
+      record "$!" "iperf3"
+      i=$((i + 1))
+    done
+    sleep "${POC_START_WAIT:-1}"
+    n=$(live_count)
+    if [ "$n" -lt "$count" ]; then echo "FAILED: only $n of $count listeners are running (port in use? firewall? address?). Check ${POC_STATE_DIR:-/var/tmp}/iperf3-server-*.log"; stop_owned >/dev/null; exit 1; fi
+    echo "$n listener(s) on $BIND ports $first-$((first + count - 1)) (TCP and UDP tests use the same port number)." ;;
+  stop) stop_owned ;;
+  status) echo "$(live_count) listener(s) started by this helper are running." ;;
+  *) echo "usage: poc-iperf-server start [first_port] [count] | stop | status"; exit 2 ;;
+esac

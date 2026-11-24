@@ -1,0 +1,88 @@
+# Case 03 - NOT TESTED. OPTIONAL, ADMINISTRATOR ONLY. Do not apply without MEMORY-DENSITY.md.
+#
+# Source: Red Hat OpenShift Virtualization documentation, "Postinstallation configuration",
+# section "Configuring higher VM workload density", procedure for provisioning swap
+# (OpenShift 4.21 and 4.22 chapters; see ../REFERENCES.md). The ignition version, the kubelet
+# drop-in (path and contents), the unit conditions, commands and [Install] targets below follow
+# that sample. Not runtime-validated here: diff it against the page for the installed version
+# before use; if the page differs, the page wins.
+#
+# DELIBERATE DEVIATIONS from the documented sample (it targets the generic `worker` role):
+#   1. role: REPLACE_POOL_ROLE, a dedicated, approved, worker-only MachineConfigPool. The generic
+#      worker pool would swap-enable and REBOOT EVERY WORKER. Never use master or worker here.
+#   2. unique MachineConfig and unit names, so nothing shared is overwritten.
+#   3. REPLACE_SWAP_SIZE_MB sets the value from the agreed size instead of the sample's 5000.
+#
+# PREFLIGHT (MEMORY-DENSITY.md Step 4 stops on any collision):
+#   - no other MachineConfig already writes /etc/openshift/kubelet.conf.d/90-swap.conf
+#   - no other MachineConfig or unit uses /var/tmp/swapfile, and the file is absent on the nodes
+#   - the pool selects ONLY the intended worker-only nodes
+#
+# REPLACE before applying:
+#   REPLACE_POOL_ROLE  the role / pool name of the approved dedicated pool
+#   REPLACE_SWAP_SIZE_MB  node RAM * (memory overcommit percent / 100 - 1), in MB. Example: 16 GB at
+#                      150% = 8 GB = 8192. /var/tmp must have that much free space.
+#
+# Applying this reboots every node of the pool, one at a time (drain, reboot).
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 90-REPLACE_POOL_ROLE-perf-swap
+  labels:
+    machineconfiguration.openshift.io/role: REPLACE_POOL_ROLE
+    perf-lab.example.com/case: "03"
+spec:
+  config:
+    ignition:
+      version: 3.5.0
+    storage:
+      files:
+        - path: /etc/openshift/kubelet.conf.d/90-swap.conf
+          contents:
+            # Decodes to:  apiVersion: kubelet.config.k8s.io/v1beta1
+            #              kind: KubeletConfiguration
+            #              failSwapOn: false
+            source: data:text/plain;charset=utf-8;base64,YXBpVmVyc2lvbjoga3ViZWxldC5jb25maWcuazhzLmlvL3YxYmV0YTEKa2luZDogS3ViZWxldENvbmZpZ3VyYXRpb24KZmFpbFN3YXBPbjogZmFsc2UK
+    systemd:
+      units:
+        - name: perf-swap-enable.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Enable the existing swap file on later boots
+            ConditionFirstBoot=no
+            ConditionPathExists=/var/tmp/swapfile
+
+            [Service]
+            Type=oneshot
+            ExecStart=/bin/sh -c "sudo swapon /var/tmp/swapfile"
+
+            [Install]
+            RequiredBy=kubelet-dependencies.target
+        - name: perf-swap-provision.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Provision and enable the swap file on first use
+            ConditionFirstBoot=no
+            ConditionPathExists=!/var/tmp/swapfile
+
+            [Service]
+            Type=oneshot
+            Environment=SWAP_SIZE_MB=REPLACE_SWAP_SIZE_MB
+            ExecStart=/bin/sh -c "sudo fallocate -l ${SWAP_SIZE_MB}M /var/tmp/swapfile && sudo chmod 600 /var/tmp/swapfile && sudo mkswap /var/tmp/swapfile && sudo swapon /var/tmp/swapfile && free -h"
+
+            [Install]
+            RequiredBy=kubelet-dependencies.target
+        - name: perf-swap-system-slice.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Keep system services out of swap
+
+            [Service]
+            Type=oneshot
+            ExecStart=/bin/sh -c 'sudo systemctl set-property --runtime system.slice MemorySwapMax=0 IODeviceLatencyTargetSec="/ 50ms"'
+
+            [Install]
+            RequiredBy=kubelet-dependencies.target

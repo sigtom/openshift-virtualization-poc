@@ -1,0 +1,8 @@
+#!/bin/bash
+# Read-only: the guest's interface, address, MTU and counters. Record these.
+IFACE=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+BIND=$(ip -4 -o addr show dev "$IFACE" 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
+echo "utc=$(date -u +%FT%TZ)"
+echo "interface=$IFACE guest_address=$BIND mtu=$(cat /sys/class/net/$IFACE/mtu 2>/dev/null) vcpus=$(nproc)"
+echo "(Clients reach a server at its POD IP shown in the console, not at this guest address.)"
+ip -s link show dev "$IFACE"

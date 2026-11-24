@@ -1,0 +1,32 @@
+# Case 03 - NOT TESTED. OPTIONAL, ADMINISTRATOR ONLY. Use only if NO suitable dedicated
+# worker-only pool already exists (an existing, approved pool is always preferred).
+# Read MEMORY-DENSITY.md, "Pool selection", first.
+#
+# What a custom pool means: a MachineConfigPool picks nodes by label (nodeSelector) and picks
+# which MachineConfigs apply by role (machineConfigSelector). Listing BOTH `worker` and the new
+# role makes the new pool INHERIT every worker MachineConfig, then add its own. A node that
+# carries both the worker label and the new role label is managed by the new pool only.
+# Moving a node into or out of the pool can drain and reboot it. Never label a control-plane
+# node; never put `master` in this selector.
+#
+# REPLACE_POOL_ROLE: a new lowercase name approved by the cluster owner, e.g. a project name.
+# Nothing is labelled by this file. Node labelling is a separate, explicit step.
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: REPLACE_POOL_ROLE
+  labels:
+    pools.operator.machineconfiguration.openshift.io/REPLACE_POOL_ROLE: ""
+    perf-lab.example.com/case: "03"
+spec:
+  machineConfigSelector:
+    matchExpressions:
+      - key: machineconfiguration.openshift.io/role
+        operator: In
+        values:
+          - worker
+          - REPLACE_POOL_ROLE
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/REPLACE_POOL_ROLE: ""
+  maxUnavailable: 1
