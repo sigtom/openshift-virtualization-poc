@@ -10,6 +10,7 @@ Hands-on tests for VMware/vCenter teams learning OpenShift Virtualization.
 | 02 — VM recovery after host failure (**fencing NOT TESTED**) | **[Run the test](test-cases/02-host-failure-recovery/RUNBOOK.md)** | [Prepare and gate](test-cases/02-host-failure-recovery/ADMIN-GUIDE.md#prepare) |
 | 03 — CPU and memory oversubscription (**client validation pending**) | **[Run the test](test-cases/03-cpu-memory-oversubscription/RUNBOOK.md)** | [Prepare](test-cases/03-cpu-memory-oversubscription/ADMIN-GUIDE.md#prepare) and [memory density](test-cases/03-cpu-memory-oversubscription/MEMORY-DENSITY.md) |
 | 04 — Network oversubscription (**client validation pending**) | **[Run the test](test-cases/04-network-oversubscription/RUNBOOK.md)** | [Prepare](test-cases/04-network-oversubscription/ADMIN-GUIDE.md#prepare) |
+| 05 — Storage IOPS (**client validation pending**; Dell layer **deferred**) | **[Run the test](test-cases/05-storage-iops/RUNBOOK.md)** | [Prepare](test-cases/05-storage-iops/ADMIN-GUIDE.md#prepare) |
 
 Case 01 covers approved-host placement, VM separation, an impossible rule,
 manual live migration and automatic placement-rule correction. Each test
@@ -28,6 +29,10 @@ and 4.22 documentation. Client execution and console verification remain pending
 no ratio is claimed safe. Memory
 contention needs a cluster-wide setting and node swap, so it has its own gated
 administrator procedure.
+
+Case 05 measures IOPS, latency and throughput using an existing VM and its existing workload,
+or an optional bounded read-only fio workload. PowerFlex measurements are recorded separately;
+CSM-exported metrics require an existing installation. The Dell procedure is deferred.
 
 The administrator prepares the cluster and VMs first. Customers then follow
 one short walkthrough; detailed operator checks and cleanup stay in the

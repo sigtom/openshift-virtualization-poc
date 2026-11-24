@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""poc-fio: bounded, read-only fio reference for the storage IOPS case.
+
+  poc-fio prepare --dir EXISTING_DIR [--size-mib 256]   create ONE new private fixture (writes data once, paced 16 MiB/s)
+  poc-fio run [--warmup 30] [--measure 180] [--repeats 3] [--rate-iops 100] [--iodepth 8]
+  poc-fio status                                         identity check, mapping info, results location
+  poc-fio cleanup                                        remove ONLY the fixture this helper created
+
+The measured workload is 4 KiB random READ, 1 job, direct=1, read-only, rate-capped.
+Preparation is NOT zero-write: it writes the fixture once. Results are never deleted.
+Not a capacity benchmark. Direct I/O bypasses the guest page cache only; it does not
+bypass host or array caches. No raw devices, no formatting, no sudo, no system changes.
+"""
+import argparse, csv, datetime, fcntl, json, os, re, shutil, signal, stat, subprocess, sys, tempfile, time
+
+MAX_SIZE_MIB, MAX_MEASURE, MAX_WARMUP, MAX_REPEATS, MAX_IOPS, MAX_DEPTH = 1024, 600, 120, 5, 500, 32
+FIXTURE, PREFIX = "fixture.dat", ".poc-fio-"
+SAFE_PATH = re.compile(r"^/[A-Za-z0-9_./@+=,-]+$")   # fio splits filenames on ':'
+BAD_ROOTS = ("/dev", "/proc", "/sys", "/run")
+BAD_FS = {"tmpfs", "ramfs", "devtmpfs", "overlay", "proc", "sysfs", "nfs", "nfs4", "9p", "fuse"}
+
+
+def die(msg, code=1):
+    print("ERROR: " + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def utc():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def home_dir(env, sub):
+    base = os.environ.get(env) or os.path.join(os.path.expanduser("~"), sub[0])
+    return os.path.join(base, sub[1])
+
+
+def paths(a):
+    state = a.state_dir or home_dir("XDG_STATE_HOME", (".local/state", "poc-fio"))
+    results = a.results_dir or os.path.join(os.path.expanduser("~"), "poc-fio-results")
+    return state, results
+
+
+def private_dir(p):
+    os.makedirs(p, mode=0o700, exist_ok=True)
+    st = os.lstat(p)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+        die("%s is not a directory owned by you" % p)
+    os.chmod(p, 0o700)
+
+
+_LOCK = []
+
+
+def take_lock(sdir):
+    """One poc-fio prepare/run/cleanup at a time (non-blocking, released at exit)."""
+    f = open(os.path.join(sdir, "lock"), "a")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        die("another poc-fio prepare/run/cleanup is running; nothing was changed")
+    _LOCK.append(f)
+
+
+def save_state(sdir, st):
+    tmp = os.path.join(sdir, "state.json.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(st, f, indent=1)
+    os.replace(tmp, os.path.join(sdir, "state.json"))
+
+
+def load_state(sdir):
+    p = os.path.join(sdir, "state.json")
+    try:
+        st = os.lstat(p)
+    except FileNotFoundError:
+        die("no fixture recorded (state absent); nothing was changed")
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+        die("state file is not a regular file owned by you; refusing")
+    try:
+        s = json.load(open(p))
+        for k in ("dir", "name", "dir_dev", "dir_ino", "dev", "ino", "uid", "size", "complete"):
+            s[k]
+    except Exception as e:
+        die("state file unreadable (%s); refusing" % e)
+    if os.path.basename(s["dir"]).startswith(PREFIX) is False or s["name"] != FIXTURE:
+        die("state does not describe a helper-owned fixture; refusing")
+    return s
+
+
+def open_dir(s):
+    """Open the private dir without following links and check it is the saved one."""
+    try:
+        fd = os.open(s["dir"], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as e:
+        die("private directory missing or replaced (%s)" % e)
+    d = os.fstat(fd)
+    if (d.st_dev, d.st_ino, d.st_uid) != (s["dir_dev"], s["dir_ino"], os.getuid()):
+        os.close(fd)
+        die("private directory identity mismatch; refusing")
+    return fd
+
+
+def check_fixture(s, dfd, strict=True):
+    try:
+        f = os.stat(s["name"], dir_fd=dfd, follow_symlinks=False)
+    except OSError as e:
+        die("fixture missing (%s)" % e)
+    if not stat.S_ISREG(f.st_mode) or f.st_nlink != 1 or f.st_uid != os.getuid():
+        die("fixture is not a single regular file owned by you; refusing")
+    if (f.st_dev, f.st_ino) != (s["dev"], s["ino"]):
+        die("fixture was replaced (identity mismatch); refusing")
+    if strict and (f.st_size != s["size"] or f.st_mtime_ns != s["mtime_ns"]):
+        die("fixture size or mtime changed; refusing")
+    return f
+
+
+def mount_info(path):
+    out = {}
+    try:
+        r = subprocess.run(["findmnt", "-T", path, "-n", "-o", "SOURCE,TARGET,FSTYPE"],
+                           capture_output=True, text=True, timeout=10)
+        parts = r.stdout.split()
+        if r.returncode == 0 and len(parts) >= 3:
+            out = {"source": parts[0], "target": parts[1], "fstype": parts[2]}
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return out
+
+
+def fio_version(fio):
+    try:
+        r = subprocess.run([fio, "--version"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as e:
+        die("cannot run '%s --version': %s" % (fio, e))
+    m = re.match(r"^fio-(\d+)\.(\d+)", r.stdout.strip())
+    if r.returncode != 0 or not m or int(m.group(1)) < 3:
+        die("not fio 3.x or newer (got %r)" % r.stdout.strip()[:60])
+    return r.stdout.strip()
+
+
+def remove_fixture(s, strict=True):
+    dfd = open_dir(s)
+    try:
+        check_fixture(s, dfd, strict)
+        os.unlink(s["name"], dir_fd=dfd)
+    finally:
+        os.close(dfd)
+    try:
+        os.rmdir(s["dir"])
+    except OSError:
+        print("note: private directory not empty, left in place: " + s["dir"])
+
+
+def cmd_prepare(a):
+    sdir, _ = paths(a)
+    private_dir(sdir)
+    take_lock(sdir)
+    if os.path.lexists(os.path.join(sdir, "state.json")):
+        die("a fixture is already recorded; run 'poc-fio cleanup' first")
+    if not 1 <= a.size_mib <= MAX_SIZE_MIB:
+        die("--size-mib must be 1..%d" % MAX_SIZE_MIB)
+    if not 1 <= a.write_mib_s <= 64:
+        die("--write-mib-s must be 1..64")
+    d = os.path.abspath(a.dir)
+    if os.path.realpath(d) != d or not os.path.isdir(d) or os.path.islink(d):
+        die("--dir must be an existing real directory path (no symlinks)")
+    if any(d == r or d.startswith(r + "/") for r in BAD_ROOTS) or not SAFE_PATH.match(d):
+        die("directory path not allowed (device/virtual path or unusual characters)")
+    if not os.access(d, os.W_OK | os.X_OK):
+        die("directory is not writable by you")
+    mi = mount_info(d)
+    if not mi or mi["fstype"] in BAD_FS:
+        die("cannot confirm a disk-backed filesystem for %s (%s)" % (d, mi.get("fstype", "unknown")))
+    size = a.size_mib * 1024 * 1024
+    v = os.statvfs(d)
+    need = 3 * size + 2 * 1024 ** 3
+    if v.f_bavail * v.f_frsize < need:
+        die("not enough free space: need %d MiB free (3x size + 2 GiB reserve)" % (need >> 20))
+    pdir = tempfile.mkdtemp(prefix=PREFIX, dir=d)       # mode 0700, new, ours
+    s = None
+    try:
+        dst = os.lstat(pdir)
+        fd = os.open(os.path.join(pdir, FIXTURE), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        fs = os.fstat(fd)
+        s = {"dir": pdir, "name": FIXTURE, "dir_dev": dst.st_dev, "dir_ino": dst.st_ino,
+             "dev": fs.st_dev, "ino": fs.st_ino, "uid": os.getuid(), "size": 0, "mtime_ns": 0,
+             "complete": False, "created": utc(), "mount": mi}
+        save_state(sdir, s)
+        with os.fdopen(fd, "wb") as f:
+            t0 = time.monotonic()
+            for i in range(a.size_mib):
+                f.write(os.urandom(1024 * 1024))
+                # pace the one-time write (buffered pacing, not a backend guarantee)
+                wait = (i + 1) / a.write_mib_s - (time.monotonic() - t0)
+                if wait > 0:
+                    time.sleep(wait)
+            f.flush()
+            os.fsync(f.fileno())
+            fs = os.fstat(f.fileno())
+        s.update(size=fs.st_size, mtime_ns=fs.st_mtime_ns, complete=True)
+        save_state(sdir, s)
+    except BaseException as e:
+        if s:
+            try:
+                remove_fixture(s, strict=False)
+                os.unlink(os.path.join(sdir, "state.json"))
+            except BaseException:
+                print("cleanup after failure incomplete; check " + pdir, file=sys.stderr)
+        else:
+            try:
+                os.rmdir(pdir)
+            except OSError:
+                pass
+        die("prepare failed: %s" % e)
+    print("Prepared %d MiB fixture (written once, random data): %s/%s" % (a.size_mib, pdir, FIXTURE))
+    print("Filesystem: %s mounted at %s (%s)" % (mi["source"], mi["target"], mi["fstype"]))
+    print("Next: poc-fio status   then   poc-fio run")
+
+
+class Child:
+    proc = None
+
+
+def _stop(signum, frame):
+    raise KeyboardInterrupt
+
+
+def run_fio(a, path, size, secs):
+    cmd = [a.fio, "--name=poc-randread", "--filename=" + path, "--rw=randread", "--bs=4k",
+           "--ioengine=" + a.ioengine, "--direct=1", "--iodepth=%d" % a.iodepth, "--numjobs=1",
+           "--size=%d" % size, "--readonly", "--allow_file_create=0",
+           "--rate_iops=%d" % a.rate_iops, "--time_based", "--runtime=%d" % secs,
+           "--percentile_list=95:99", "--group_reporting", "--output-format=json"]
+    Child.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        out, err = Child.proc.communicate(timeout=secs + 60)
+    except subprocess.TimeoutExpired:
+        kill_child()
+        die("fio exceeded its time limit (%ds + 60s); stopped" % secs)
+    rc = Child.proc.returncode
+    Child.proc = None
+    if rc != 0:
+        die("fio exited with status %d: %s" % (rc, (err or out).strip()[-400:]))
+    i = out.find("{")
+    if i < 0:
+        die("fio produced no JSON output")
+    return out[i:], json.loads(out[i:])
+
+
+def kill_child():
+    p = Child.proc
+    if p and p.poll() is None:
+        p.terminate()
+        try:
+            p.wait(10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+
+
+def parse(js):
+    job = js["jobs"][0]
+    if job.get("error", 0) != 0:
+        die("fio job reported error %s" % job["error"])
+    r, w = job["read"], job["write"]
+    if r["total_ios"] + w["total_ios"] == 0:
+        die("fio completed no I/O")
+    if "clat_ns" not in r:
+        die("fio JSON has no clat_ns (unsupported fio); not guessing units")
+    pct = {round(float(k)): v for k, v in r["clat_ns"].get("percentile", {}).items()}
+    # read and write counted once each; this workload is read-only so write is 0.
+    return {"iops": r["iops"] + w["iops"], "bw_kib_s": r["bw"] + w["bw"],
+            "clat_mean_ms": r["clat_ns"]["mean"] / 1e6,
+            "clat_p95_ms": pct[95] / 1e6, "clat_p99_ms": pct[99] / 1e6,
+            "writes": w["total_ios"]}
+
+
+def recheck(s):
+    dfd = open_dir(s)
+    try:
+        check_fixture(s, dfd)
+    finally:
+        os.close(dfd)
+
+
+def cmd_run(a):
+    sdir, rdir = paths(a)
+    for v, hi, n in ((a.measure, MAX_MEASURE, "measure"), (a.warmup, MAX_WARMUP, "warmup"),
+                     (a.repeats, MAX_REPEATS, "repeats"), (a.rate_iops, MAX_IOPS, "rate-iops"),
+                     (a.iodepth, MAX_DEPTH, "iodepth")):
+        if not 0 <= v <= hi or (n != "warmup" and v < 1):
+            die("--%s must be within its cap (max %d)" % (n, hi))
+    private_dir(sdir)
+    take_lock(sdir)
+    s = load_state(sdir)
+    if not s["complete"]:
+        die("fixture preparation did not finish; run cleanup then prepare again")
+    ver = fio_version(a.fio)
+    private_dir(rdir)
+    run_id = utc().replace(":", "")
+    out = tempfile.mkdtemp(prefix="run-" + run_id + "-", dir=rdir)
+    path = os.path.join(s["dir"], s["name"])
+    meta = {"run_id": run_id, "fio": ver, "fixture": path, "size_bytes": s["size"], "mount": s["mount"],
+            "workload": "randread bs=4k numjobs=1 direct=1 readonly", "iodepth": a.iodepth,
+            "rate_iops_cap": a.rate_iops, "warmup_s": a.warmup, "measure_s": a.measure}
+    json.dump(meta, open(os.path.join(out, "meta.json"), "w"), indent=1)
+    signal.signal(signal.SIGTERM, _stop)
+    rows, cols = [], ["repeat", "start_utc", "end_utc", "iops", "bw_kib_s", "clat_mean_ms", "clat_p95_ms", "clat_p99_ms"]
+    print("Read-only 4 KiB random read, iodepth %d, cap %d IOPS, fixture %d MiB" % (a.iodepth, a.rate_iops, s["size"] >> 20))
+    try:
+        for n in range(1, a.repeats + 1):
+            recheck(s)                              # identity check before warm-up
+            if a.warmup:
+                print("repeat %d: warm-up %ds (excluded) ..." % (n, a.warmup), flush=True)
+                run_fio(a, path, s["size"], a.warmup)
+            recheck(s)                              # and again right before the measured phase
+            t0 = utc()
+            raw, js = run_fio(a, path, s["size"], a.measure)
+            t1 = utc()
+            m = parse(js)
+            if m["writes"]:
+                die("fio reported writes during a read-only run; stopping")
+            open(os.path.join(out, "repeat%d.json" % n), "w").write(raw)
+            row = [n, t0, t1] + ["%.2f" % m[k] if k == "iops" else "%.3f" % m[k]
+                                 for k in ("iops", "bw_kib_s", "clat_mean_ms", "clat_p95_ms", "clat_p99_ms")]
+            row[3], row[4] = "%.1f" % m["iops"], "%.0f" % m["bw_kib_s"]
+            rows.append(row)
+            print("repeat %d  %s -> %s  IOPS %s  KiB/s %s  clat mean/p95/p99 ms %s/%s/%s"
+                  % (n, t0, t1, row[3], row[4], row[5], row[6], row[7]), flush=True)
+    except KeyboardInterrupt:
+        kill_child()
+        print("Interrupted: fio stopped; partial results kept in " + out)
+        sys.exit(130)
+    finally:
+        kill_child()
+        with open(os.path.join(out, "summary.tsv"), "w", newline="") as f:
+            w = csv.writer(f, delimiter="\t")
+            w.writerow(cols)
+            w.writerows(rows)
+    print("Saved: " + out)
+    print("Achieved IOPS near the cap means the cap, not the disk, limited the run. clat is guest-side completion latency.")
+
+
+def cmd_status(a):
+    sdir, rdir = paths(a)
+    s = load_state(sdir)
+    dfd = open_dir(s)
+    try:
+        check_fixture(s, dfd, strict=s["complete"])
+    finally:
+        os.close(dfd)
+    print("fixture OK: %s/%s  %d MiB  complete=%s  created %s" % (s["dir"], s["name"], s["size"] >> 20, s["complete"], s["created"]))
+    mi = mount_info(s["dir"])
+    print("filesystem: %s mounted at %s (%s)" % (mi.get("source"), mi.get("target"), mi.get("fstype")))
+    print("fio: " + (fio_version(a.fio) if shutil.which(a.fio) else "NOT FOUND"))
+    print("Map the source device to a VM disk (RUNBOOK step 2):")
+    subprocess.run(["lsblk", "-o", "NAME,SERIAL,SIZE,TYPE,MOUNTPOINTS"])
+    print("results directory: " + rdir)
+
+
+def cmd_cleanup(a):
+    sdir, _ = paths(a)
+    private_dir(sdir)
+    take_lock(sdir)
+    s = load_state(sdir)
+    remove_fixture(s, strict=s["complete"])
+    os.unlink(os.path.join(sdir, "state.json"))
+    print("Removed the helper-created fixture. Result files were kept.")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="poc-fio", description=__doc__.split("\n")[0])
+    p.add_argument("--fio", default="fio")
+    p.add_argument("--state-dir")
+    p.add_argument("--results-dir")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    x = sub.add_parser("prepare"); x.add_argument("--dir", required=True); x.add_argument("--size-mib", type=int, default=256); x.add_argument("--write-mib-s", type=int, default=16)
+    x = sub.add_parser("run")
+    x.add_argument("--warmup", type=int, default=30); x.add_argument("--measure", type=int, default=180)
+    x.add_argument("--repeats", type=int, default=3); x.add_argument("--rate-iops", type=int, default=100)
+    x.add_argument("--iodepth", type=int, default=8); x.add_argument("--ioengine", default="libaio")
+    sub.add_parser("status"); sub.add_parser("cleanup")
+    a = p.parse_args()
+    {"prepare": cmd_prepare, "run": cmd_run, "status": cmd_status, "cleanup": cmd_cleanup}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main()
