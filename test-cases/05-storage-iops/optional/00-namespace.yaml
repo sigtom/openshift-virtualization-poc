@@ -1,7 +1,0 @@
-# Case 05 - NOT TESTED. OPTIONAL: project for the new storage VM. Do NOT apply if it exists or belongs to someone else.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: perf-storage-lab
-  labels:
-    perf-lab.example.com/case: "05"
