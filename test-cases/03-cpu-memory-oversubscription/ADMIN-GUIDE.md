@@ -119,7 +119,7 @@ configuration edit** (a disposable VM only) are in [3.5](#adapt).
 
 Only when no suitable unchanged VM exists, the owner agrees, and a copy of the VM's
 current definition is saved privately. Console: **Virtualization → VirtualMachines →
-VM → YAML** (copy it out), then stop the VM (**Actions → Stop**: **this is a restart-class
+VM → YAML** (copy it out), then stop the VM (**Actions → Control → Stop**: **this is a restart-class
 change; the VM is down**), edit under **Configuration**/**YAML**, save, start.
 Touch **only** the fields below, write the old value for each, and restore only those:
 
@@ -326,6 +326,11 @@ production figure.
 
 ## 9. Metrics: console route and queries
 
+In **Observe → Metrics**, set **Refresh → 30 seconds** while watching a run.
+Choose a time span that includes baseline, load and recovery. Keep the exact
+UTC windows on the results sheet; a live chart is not a saved result.
+
+
 **Console route (customer-friendly):** VM **Metrics** tab; **Observe →
 Dashboards** (*Kubernetes / Compute Resources / Node (Pods)*, *Node Exporter /
 Nodes*, *Node Exporter / USE Method / Node*). Choose the test node and the run's
@@ -340,16 +345,17 @@ and filter the other host series to that same instance. Never average all hosts.
 
 | Need | Candidate series (verify) |
 | --- | --- |
-| Host CPU busy | `1 - avg(rate(node_cpu_seconds_total{mode="idle",instance="INSTANCE"}[1m]))` |
-| Host CPU pressure (PSI) | `rate(node_pressure_cpu_waiting_seconds_total[1m])` (**only if PSI is enabled**; do not enable it just for this test) |
+| Host CPU busy (%) | `100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle",instance="INSTANCE"}[1m])))` |
+| Host CPU pressure (PSI) | `rate(node_pressure_cpu_waiting_seconds_total{instance="INSTANCE"}[1m])` (**only if PSI is enabled**; do not enable it just for this test) |
 | CPU throttling | `container_cpu_cfs_throttled_periods_total` on `virt-launcher` pods (only meaningful if the launcher compute container has a CPU limit; inspect it) |
 | Guest vCPU delay / I/O wait | `rate(kubevirt_vmi_vcpu_delay_seconds_total[1m])` measures scheduler delay/steal; `kubevirt_vmi_vcpu_wait_seconds_total` is I/O wait. Filter by VM and project. Scheduler statistics may be absent; do not change node kernel arguments for this test |
 | Guest steal and load | guest `poc-stats` (`cpu_steal_ticks`, `loadavg`) |
 | Scheduler CPU requests on node | `sum(kube_pod_container_resource_requests{resource="cpu",node="NODE"})` vs `kube_node_status_allocatable{resource="cpu",node="NODE"}` |
-| Host memory | `node_memory_MemTotal_bytes`, `node_memory_MemAvailable_bytes` |
-| Memory pressure | `rate(node_pressure_memory_waiting_seconds_total[1m])` (PSI only, as above) |
-| Host swap use and I/O | `node_memory_SwapTotal_bytes`, `node_memory_SwapFree_bytes`, `rate(node_vmstat_pswpin[1m])`, `rate(node_vmstat_pswpout[1m])` |
-| Major faults, OOM | `rate(node_vmstat_pgmajfault[1m])`, `node_vmstat_oom_kill` |
+| Host memory | `node_memory_MemTotal_bytes{instance="INSTANCE"}`, `node_memory_MemAvailable_bytes{instance="INSTANCE"}` |
+| Host memory used estimate (%) | `100 * (1 - sum(node_memory_MemAvailable_bytes{instance="INSTANCE"}) / sum(node_memory_MemTotal_bytes{instance="INSTANCE"}))` |
+| Memory pressure | `rate(node_pressure_memory_waiting_seconds_total{instance="INSTANCE"}[1m])` (PSI only, as above) |
+| Host swap use and I/O | `node_memory_SwapTotal_bytes{instance="INSTANCE"}`, `node_memory_SwapFree_bytes{instance="INSTANCE"}`, `rate(node_vmstat_pswpin{instance="INSTANCE"}[1m])`, `rate(node_vmstat_pswpout{instance="INSTANCE"}[1m])` |
+| Major faults, OOM | `rate(node_vmstat_pgmajfault{instance="INSTANCE"}[1m])`, `node_vmstat_oom_kill{instance="INSTANCE"}` |
 | Guest memory / swap | `kubevirt_vmi_memory_available_bytes`, `kubevirt_vmi_memory_usable_bytes`, `kubevirt_vmi_memory_swap_in_traffic_bytes`, `kubevirt_vmi_memory_swap_out_traffic_bytes` (guest swap, not host swap; inspect the exported type before calculating changes) |
 | Evictions, OOM kills | `kube_pod_status_reason{reason="Evicted"}`, `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}` |
 | Migrations | **Virtualization → Migrations / events**, or `oc get vmim -A`; metric prefix `kubevirt_vmi_migration` |
@@ -363,6 +369,10 @@ end in **UTC** (the scripts print it) and read metrics for exactly those
 windows.
 
 <a id="memory-gate"></a>
+
+![Host CPU query and refresh controls; private selector hidden](images/07-host-cpu.png)
+
+![Host memory query; use the same test-node selector](images/08-host-memory.png)
 
 ## 10. Memory gate (do not skip)
 

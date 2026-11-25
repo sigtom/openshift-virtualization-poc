@@ -1,7 +1,7 @@
 # Test 03: CPU and memory oversubscription
 
 > **Client validation pending.** Target: OpenShift 4.21.31. Complete the client
-> results sheet and verify the web-console steps before presenting this case.
+> results sheet before calling the test passed.
 
 For VMware/vCenter teams asking: *what happens to my VM when many other VMs
 share its host?* One fixed **measured VM** runs the same benchmark while
@@ -65,5 +65,17 @@ first. Nothing is labelled, started or reconfigured automatically.
   automatically. Without it the memory phase is **Blocked**.
 - Linux/RHEL guests only; Windows guests are not assumed compatible.
 - sysbench figures are benchmark statistics, not application latency.
-- Public repository: no credentials, hostnames or evidence. Keep completed
-  results private.
+- Public repository: only redacted navigation and reference-output pictures. Keep
+  credentials, identifying details and completed results private.
+
+## Walkthrough verification
+
+The OpenShift 4.22 console navigation, helper preparation, CPU baseline, bounded
+competing CPU load, stop checks and recovery were exercised with three repeats
+per phase. The screenshots are redacted reference output. This rehearsal did
+**not** establish CPU oversubscription or a safe ratio.
+
+Memory density changes, host swap setup and the memory phase were **not run**:
+the required dedicated worker-only pool was unavailable. The memory phase remains
+**Blocked** until its prerequisites are met. OpenShift 4.21 execution and new-VM
+provisioning on `vxflexos` / Block / RWX remain unverified.

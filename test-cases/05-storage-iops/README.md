@@ -1,7 +1,7 @@
 # Test 05: storage IOPS
 
-> **Client validation pending.** Target: OpenShift 4.21. Console steps are unverified until
-> client verification. Complete the results sheet first.
+> **Client validation pending.** Target: OpenShift 4.21. Complete the results
+> sheet before calling the case passed; see the rehearsal limits below.
 
 For teams asking: *what I/O rate, latency and throughput does a VM's disk show while an agreed
 workload runs, and what do the layers report?* One bounded, read-only workload runs inside a
@@ -48,4 +48,20 @@ be equal.
 - `direct=1` bypasses the guest page cache only, not host or array caches.
 - This case never installs Dell CSM. The Dell layer is optional and deferred until all other
   non-destructive tests are done and the administrator approves.
-- Public repository: no credentials, hostnames, addresses or results. Keep evidence private.
+- Public repository: only redacted navigation and reference-output pictures. Keep credentials,
+  identifying details and completed results private.
+
+## Walkthrough verification
+
+The native workflow was exercised through the OpenShift 4.22 web console on
+alternate shared storage: exact guest/disk/volume mapping, idle baseline, fixture
+preparation and identity check, three bounded read repeats, matched disk queries,
+recovery and fixture cleanup. The screenshots are redacted reference output.
+
+**Observe → Metrics** supplies the recorded VM-disk figures. The native Storage
+IOPS card did not match its linked query during the rehearsal; its numerical
+display remains **unverified**. Keep each layer's figures and windows separately.
+
+OpenShift 4.21 execution and `vxflexos` / Block / RWX provisioning remain
+unverified. Dell CSM and PowerFlex measurements were **Not available / Not run**.
+This rehearsal does not establish storage capacity or validate PowerFlex.

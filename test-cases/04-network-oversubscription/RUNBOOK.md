@@ -8,19 +8,27 @@ traffic to the same network link.
 [results sheet](RESULTS-TEMPLATE.md), tools and graphs. New test VMs are optional.
 Do not add network interfaces or change existing VM sizes for this walkthrough.
 
-Client execution and web-console verification are still pending. Complete the
-results sheet before calling a test passed. A short test does not establish a
+The bounded UDP console walkthrough has been rehearsed on OpenShift 4.22.
+OpenShift 4.21 execution, full TCP measurements and actual physical-link
+oversubscription remain unverified. Complete your results sheet before calling a test passed. A short test does not establish a
 safe production oversubscription ratio.
+
+The pictures show the controls and reference output. Private values are covered
+with black boxes. Use the VMs, addresses, directory and times on **your results
+sheet**; the pictures are not results for your environment.
 
 ## 1. Open the VMs
 
-1. Open **Virtualization → VirtualMachines** and the project on your sheet.
+1. Open **Workloads → Pods** and select the project on your sheet. Then open **Virtualization → VirtualMachines → Virtual machines**. This also works when the VM project filter is disabled.
 2. Open the **measured server** and **measured client**. Check their **Node** values
    match the sheet. A node is the host running a VM.
-3. Open each VM’s **Console → Serial console** and log in with your existing guest account. The
-   optional new test VMs log in automatically. Type commands inside these consoles.
-4. Keep each VM’s **Metrics** tab and the prepared host/network graphs open in
-   separate tabs. Set their time range to cover your run.
+3. Open each VM’s **Console**, use the **VNC console** dropdown to select **Serial console**, wait for connection, click inside the terminal and press **Enter**. Log in with your existing guest account; the optional new test VMs log in automatically.
+4. Keep each VM’s **Metrics → Network** section and the prepared host/network
+   graphs open in separate tabs. Select the interface on your sheet. Set the VM
+   time range to **Last 5 minutes** for short runs; use the prepared graphs for
+   the complete baseline, load and recovery window.
+
+![Choose Serial console from the console dropdown](images/00-serial-console.png)
 
 **Expected:** both VMs are Running, their consoles work, and graphs show data.
 Use the **server address on the sheet**. With the default network, the guest’s
@@ -31,6 +39,8 @@ Paste **one command at a time** into the guest console, press **Enter**, and wai
 its expected output before continuing. If the existing guest uses a different console,
 use the working console the administrator lists on your sheet.
 
+![VM Metrics: expand Network and choose the tested interface](images/06-network-graphs.png)
+
 ## 2. Record a baseline
 
 In the **measured server’s** console:
@@ -39,7 +49,10 @@ In the **measured server’s** console:
 poc-iperf-server start 5201 2
 ```
 
-**Expected:** `2 listener(s)`. Leave this server running.
+**Expected:** `2 listener(s)`. Leave this server running. Use the server address on
+your sheet for the client commands; the listener can print a different guest bind address.
+
+![Measured server listener confirmation; address hidden](images/02-measured-listeners.png)
 
 In the **measured client’s** console, replace `SERVER_IP` with the address on
 your sheet:
@@ -57,12 +70,20 @@ For shorter agreed runs, use the same arguments throughout, for example
 and **ping min/avg/max** (round-trip delay). Ping measures the reachable endpoint;
 it may be answered by the pod network rather than the guest.
 
+![Reference UDP baseline summary; addresses and timestamps hidden](images/04-baseline-result.png)
+
 ## 3. Add competing traffic
 
-For each load level on the sheet:
+For each load level on the sheet, use the agreed protocol in both measured and
+competitor commands (`tcp`, `tcp-rev` or `udp`). The screenshots illustrate the
+bounded UDP alternative in **Other agreed measurements** below.
+
+For each load level:
 
 1. Check the **competitor server and client** are Running on the planned nodes.
 2. In the competitor **server** console run `poc-iperf-server start 5201 4`.
+
+   ![Competitor server listener confirmation; address hidden](images/03-competitor-listeners.png)
 3. In the competitor **client** console run the command on the sheet. Example:
 
    ```sh
@@ -84,6 +105,10 @@ example. When the shared link fills, throughput may fall or delay/retransmission
 may rise. The administrator confirms the actual link utilization. A same-host
 test is only a control and does not demonstrate physical uplink oversubscription.
 
+![Check that the planned competing flows are running](images/05-competitor-running.png)
+
+![Reference UDP result under the agreed competing load](images/08-loaded-result.png)
+
 ## 4. Check recovery and finish
 
 1. Stop competitor traffic with `poc-net-load stop` and competitor listeners with
@@ -95,6 +120,14 @@ test is only a control and does not demonstrate physical uplink oversubscription
    [cleanup](ADMIN-GUIDE.md#reset).
 
 **Expected:** recovery results close to baseline. Record any difference.
+
+![Competitor flow count is zero after stopping](images/09-competitors-stopped.png)
+
+![Competitor server listener count is zero after stopping](images/10-listeners-stopped.png)
+
+![Reference UDP recovery summary](images/11-recovery-result.png)
+
+![Measured server listener count is zero at the end](images/12-measured-listeners-stopped.png)
 
 ## Other agreed measurements
 

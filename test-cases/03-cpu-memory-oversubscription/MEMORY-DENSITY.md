@@ -1,6 +1,7 @@
 # Administrator appendix: enable, verify and undo memory density
 
-> **NOT TESTED. Administrator only. Written from documentation, never run here.**
+> **Memory-density and swap changes NOT TESTED. Administrator only.**
+> The screenshot verifies read-only navigation, not enabling this feature.
 > Source: Red Hat OpenShift Virtualization documentation, chapter
 > *Postinstallation configuration*, section *Configuring higher VM workload density*
 > ([4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/postinstallation-configuration),
@@ -46,7 +47,7 @@ fields you touched. Never replace a whole shared object from these copies.
 
 ## Step 1. Inspect the current state (console first)
 
-1. **Virtualization → Overview → Settings → General settings → Memory density.** Write down
+1. Open **Virtualization → Settings → Cluster → General settings → Memory density** in the newer console. Earlier consoles can show **Virtualization → Overview → Settings → General settings → Memory density**. Write down
    whether **Configure memory density** is on and its value.
 2. **Compute → MachineConfigPools:** every pool **Updated**, none **Degraded**.
 3. **Compute → Nodes:** the test nodes are Ready.
@@ -55,6 +56,8 @@ fields you touched. Never replace a whole shared object from these copies.
 change it, do not turn it off afterwards, and skip Steps 6 and 8-HCO. Check only swap on the
 test nodes (Step 5) and the effective request (Step 7). If the value is too low for the plan,
 stop and ask the owner.
+
+![Locate Memory density in the newer console; do not enable it during inspection](images/05-memory-settings.png)
 
 ## Step 2. Pin the API version before any command (do not guess a field path)
 
@@ -157,7 +160,7 @@ If the pool goes **Degraded** or a node stays NotReady: stop, add no more nodes,
 
 ## Step 6. Turn memory density on (console)
 
-1. **Virtualization → Overview → Settings → General settings → Memory density.**
+1. Open **Virtualization → Settings → Cluster → General settings → Memory density** (or the earlier-console path in Step 1).
 2. Turn on **Configure memory density**; choose the **approved** percentage (the console offers
    100% to 400% in 25% steps, for example 150%). **Save.**
 
@@ -179,7 +182,7 @@ version to see **which pod QoS classes receive swap**; do not assume which VMs b
 
 A VM picks up the request when its launcher pod is created, so use a VM started **after** Step 6.
 
-1. Start one competitor (**Actions → Start**) and wait for **Running**.
+1. Start one competitor (**Actions → Control → Start**) and wait for **Running**.
 2. Console: **Workloads → Pods →** the `virt-launcher-…` pod **→ YAML**, field
    `resources.requests.memory`. CLI:
 
@@ -206,8 +209,7 @@ Do these in order.
    `MemAvailable` (`free -m`, "available") must exceed swap *used* with a clear margin. If it
    does not, do not remove swap while anything runs: stop more workloads on that node first.
    Removing swap config reboots the node, but do not rely on that to clean up under pressure.
-3. **Restore memory density** (skip if you reused an existing setting). Console: **Virtualization →
-   Overview → Settings → General settings → Memory density**, set the recorded value, or turn it
+3. **Restore memory density** (skip if you reused an existing setting). Console: use the **Memory density** path in Step 1, set the recorded value, or turn it
    off if it was off. CLI, restoring **only** the field you touched, using the Step 3 record:
 
    - *Value was present* (for example 100): set it back:

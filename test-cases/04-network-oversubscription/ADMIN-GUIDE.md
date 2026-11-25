@@ -77,8 +77,7 @@ sizes and placement on the sheet.
 
 ### 3.2 Address to use
 
-1. **First choice: the server VM's existing Pod IP** (console **Overview**), or any
-   address clients can already reach. Use the same address in every phase.
+1. **First choice: the server VM's existing Pod IP**, or an address clients can already reach. In the VM **Overview → General → Pod**, open the launcher Pod, then read its **Details → Pod IP**. This is different from the guest bind address that the listener may print. Verify it from the client and use the same address in every phase.
 2. A `ClusterIP` Service (an internal name that forwards to the VM) only if the Pod IP
    cannot be used. A Service adds a forwarding step, so its results are **not
    comparable** with Pod-IP results. Never mix them in one comparison, and never use
@@ -261,19 +260,43 @@ Check these as **separate statuses** and record each on the sheet. Do not assume
 
 ## 8. Metrics
 
+In **Observe → Metrics**, set **Refresh → 30 seconds** while watching a run.
+Choose a time span that includes baseline, load and recovery. Keep the exact
+UTC windows on the results sheet; a live chart is not a saved result.
+For short runs, use **Last 5 minutes** in VM Metrics. The native graphs smooth
+values over their selected range; use the fixed `[1m]` queries below to inspect
+short changes over a longer chart span.
+
+
 Console: VM **Metrics** tab; **Observe → Dashboards** (*Node Exporter / USE Method /
 Node*, *Node Exporter / Nodes*), choose the node and the UTC window (names pending
 verification). Queries in **Observe → Metrics** — **verify each series exists** before
-using it; write "not available" otherwise. Replace `NODE`, `DEV`.
+using it; write "not available" otherwise. Replace `NODE`, `DEV`, `NS` and `VM`.
+Find the host's exact scrape `INSTANCE` with `node_uname_info{nodename="NODE"}`;
+use that instance in every host query. Choose the interface carrying the agreed
+path. Do not add a physical interface, its bond and its VLAN counters together.
+For each VM, discover its exported interface labels with
+`count by (interface) (kubevirt_vmi_network_transmit_bytes_total{namespace="NS",name="VM"})`.
+Record the label for the agreed path as `INTERFACE`; filter it in both VM queries.
+Do not sum unrelated interfaces on an existing VM.
 
-| Need | Candidate series (verify) |
+| Need | Query (verify series first) |
 | --- | --- |
-| NIC throughput | `rate(node_network_transmit_bytes_total{device="DEV"}[1m])`, `rate(node_network_receive_bytes_total{device="DEV"}[1m])` (× 8 for bit/s) |
-| NIC rate | `node_network_speed_bytes` |
-| Drops and errors | `rate(node_network_receive_drop_total[1m])`, `rate(node_network_transmit_drop_total[1m])`, `…_errs_total` |
-| Host TCP retransmits | `rate(node_netstat_Tcp_RetransSegs[1m])` |
-| Per VM traffic | `kubevirt_vmi_network_transmit_bytes_total`, `kubevirt_vmi_network_receive_bytes_total` |
+| NIC throughput | `rate(node_network_transmit_bytes_total{instance="INSTANCE",device="DEV"}[1m])`, `rate(node_network_receive_bytes_total{instance="INSTANCE",device="DEV"}[1m])` (× 8 for bit/s) |
+| NIC rate | `node_network_speed_bytes{instance="INSTANCE",device="DEV"}` |
+| Drops | `rate(node_network_receive_drop_total{instance="INSTANCE",device="DEV"}[1m])`, `rate(node_network_transmit_drop_total{instance="INSTANCE",device="DEV"}[1m])` |
+| Errors | `rate(node_network_receive_errs_total{instance="INSTANCE",device="DEV"}[1m])`, `rate(node_network_transmit_errs_total{instance="INSTANCE",device="DEV"}[1m])` |
+| Host TCP retransmits | `rate(node_netstat_Tcp_RetransSegs{instance="INSTANCE"}[1m])` |
+| Per-VM transmit bytes/s | `sum(rate(kubevirt_vmi_network_transmit_bytes_total{namespace="NS",name="VM",interface="INTERFACE"}[1m]))` |
+| Per-VM receive bytes/s | `sum(rate(kubevirt_vmi_network_receive_bytes_total{namespace="NS",name="VM",interface="INTERFACE"}[1m]))` |
 | Guest CPU (generator limit) | VM **Metrics** tab; guest `top` |
+
+To show Mbit/s, multiply a per-VM bytes/s query by `8 / 1000000`. Run one
+query for the measured VM and another for the competitor VM, filtered to the
+agreed interface. The screenshot uses VMs with only one exported interface. The series show
+interface traffic, which includes protocol overhead rather than just delivered data.
+
+![Fixed one-minute network queries for the measured and competing VMs](images/07-rate-queries.png)
 
 Also record per run: iperf3 goodput, Retr, RTT, UDP loss/jitter, UDP offered rate.
 Any **VM migration, restart, or node event** in the window invalidates the run.
