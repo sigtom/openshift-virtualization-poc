@@ -9,19 +9,25 @@ host’s CPU and memory. More virtual resources than host capacity is called
 prepares the [results sheet](RESULTS-TEMPLATE.md), tools and graphs first.
 [New test VMs](ADMIN-GUIDE.md#prepare) are a fallback.
 
-Client execution and web-console verification are still pending. Complete the
-results sheet before calling a test passed. A benchmark is not a production
+The CPU console walkthrough has been rehearsed on OpenShift 4.22; the memory
+phase and OpenShift 4.21 execution remain unverified. Complete your results sheet
+before calling a test passed. A benchmark is not a production
 capacity recommendation.
+
+The pictures show the controls and reference output. Private values are covered
+with black boxes. Use the VMs, addresses, directory and times on **your results
+sheet**; the pictures are not results for your environment.
 
 ## 1. Open the VMs and graphs
 
-1. Open **Virtualization → VirtualMachines** and select the project on your sheet.
+1. Open **Workloads → Pods** and select the project on your sheet. Then open **Virtualization → VirtualMachines → Virtual machines**. This also works when the VM project filter is disabled.
 2. Open the **measured VM**: this runs the workload you will compare. Check its
    **Node** matches the sheet. A node is the physical host running the VM.
-3. Open its **Console → Serial console** and log in with your existing guest account. The optional
-   new test VMs log in automatically. Type commands here, inside the VM.
+3. Open **Console**, use the **VNC console** dropdown to select **Serial console**, wait for connection, click inside the terminal and press **Enter**. Log in with your existing guest account; the optional new test VMs log in automatically. Type commands inside the VM.
 4. Open the VM’s **Metrics** tab in another browser tab. Keep the administrator’s
    host CPU, memory and swap graphs open too, filtered to the test node.
+
+![Choose Serial console from the console dropdown](images/00-serial-console.png)
 
 **Expected:** the VMs are Running, their consoles work, and graphs show data.
 Keep existing VMs at their current size and location. Start optional new VMs
@@ -30,6 +36,8 @@ only when the administrator says they are ready.
 Paste **one command at a time** into the guest console, press **Enter**, and wait for
 its expected output before continuing. If the existing guest uses a different console,
 use the working console the administrator lists on your sheet.
+
+![VM Metrics: keep CPU and memory graphs open](images/01-vm-metrics.png)
 
 ## 2. Record a baseline
 
@@ -41,7 +49,9 @@ poc-sysbench cpu
 poc-sysbench memory
 ```
 
-Run them **one at a time**, with no competing load. Each command discards
+Run the CPU command with no competing load. Run the memory command only if
+the sheet says **Memory prerequisites approved**; otherwise keep that phase
+**Blocked** and continue with CPU only. Run the commands **one at a time**. Each command discards
 5 minutes of warm-up, then measures for 15 minutes. Repeat each three times.
 For shorter agreed runs, use the same arguments throughout, for example
 `poc-sysbench cpu 60 300` and `poc-sysbench memory 60 300`.
@@ -50,7 +60,10 @@ For shorter agreed runs, use the same arguments throughout, for example
 UTC times, throughput (CPU: events/sec; memory: MiB/sec), and average/95th
 percentile/max latency. Higher throughput means more work completed. Lower
 latency means less time per operation. Use the same application workload instead
-if the sheet specifies one; keep its data size and users unchanged.
+if the sheet specifies one; keep its data size and users unchanged. Scroll up inside the terminal if the throughput
+or latency summary is above the visible area.
+
+![Reference CPU baseline summary; timestamps redacted](images/02-baseline-result.png)
 
 ## 3. Add CPU load
 
@@ -73,12 +86,18 @@ processes` when stopping. The load also stops itself after 75 minutes. For each
 approved higher load level, repeat this step using the competitors on the sheet.
 The measured VM and its command stay unchanged.
 
+![Confirm the competitor reports RUNNING](images/03-competitor-running.png)
+
+![Compare the same CPU workload under competing load](images/04-loaded-result.png)
+
+![Confirm the competitor has stopped](images/06-competitor-stopped.png)
+
 ## 4. Add memory load
 
 **Only continue when the sheet says “Memory prerequisites approved”.** Otherwise
 record **Blocked**. The administrator follows the complete
 [memory setup and restore procedure](MEMORY-DENSITY.md); participants do not
-change cluster settings.
+change cluster settings. Guest swap alone does not satisfy the host-swap requirement.
 
 1. With CPU load stopped, run this in each approved competitor’s console:
 
@@ -100,11 +119,12 @@ synthetic bandwidth test does not replace an application working-set test.
 ## 5. Check recovery and finish
 
 1. Confirm every competitor reports `NOT running` after `poc-load status`.
-2. Wait five minutes, then repeat the CPU command **three times** and the memory command
-   **three times**, one run at a time, with the same settings.
+2. Wait five minutes, then repeat the CPU command **three times** with the same settings. If the memory phase was approved and run, also repeat the memory command **three times**, one run at a time. Otherwise leave memory **Blocked**.
 3. Record whether throughput and latency returned close to the baseline.
 4. Leave existing VMs running. Give the sheet to the administrator for
    [cleanup and restoration](ADMIN-GUIDE.md#reset).
+
+![Reference CPU recovery summary after competing load stops](images/09-recovery-result.png)
 
 **Stop the load and contact the administrator** if you see `BLOCKED`, `FAILED`,
 `RUN FAILED`, a VM restart, a paused VM, or missing graphs. Keep the error and

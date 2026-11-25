@@ -5,15 +5,22 @@ latency in the guest and in the OpenShift console.
 
 The administrator [prepares and approves](ADMIN-GUIDE.md#prepare) first and gives you the
 [results sheet](RESULTS-TEMPLATE.md): VM, project, **directory to use**, graph links and
-times. Do not resize, restart, snapshot or migrate the VM. Client console verification is pending.
+times. Do not resize, restart, snapshot or migrate the VM. The bounded native
+workflow was rehearsed on OpenShift 4.22; target-cluster execution remains pending.
+
+The pictures show the controls and reference output. Private values are covered
+with black boxes. Use the VMs, addresses, directory and times on **your results
+sheet**; the pictures are not results for your environment.
 
 ## 1. Open the VM and the graphs
 
-1. **Virtualization → VirtualMachines**, pick the project and VM on your sheet.
-2. **Overview**: confirm **Running**. **Metrics** tab → **Storage**: keep it open, set the
-   time range to cover your run. If no storage graph appears, tell the administrator
-   (they use **Observe → Metrics** instead).
-3. **Console → Serial console**: log in with your existing guest account. Type the commands below there.
+1. Open **Workloads → Pods** and select the project on your sheet. Then open **Virtualization → VirtualMachines → Virtual machines** and choose the VM. This also works when the VM project filter is disabled.
+2. **Overview**: confirm **Running**. Open the three prepared graph links on your
+   sheet: **IOPS**, **throughput** and **latency**. They open **Observe → Metrics**
+   already filtered to your VM disk. Keep them open for recording results.
+3. Open **Console**, use the **VNC console** dropdown to select **Serial console**, wait for connection, click inside the terminal and press **Enter**. Log in with your existing guest account. Type the commands below there.
+
+![Choose Serial console from the console dropdown](images/00-serial-console.png)
 
 **Expected:** VM Running, console prompt. Keep the VM's current workload as it is.
 
@@ -36,6 +43,8 @@ down the device name and **SERIAL**. The administrator maps it to the VM disk na
 sheet says the mapping is unclear, stop (do not guess). The
 **root disk** also carries the operating system's own I/O, so its numbers include background noise.
 
+![Identify the guest device and its disk serial](images/01-disk-mapping.png)
+
 ## 3. Record an idle baseline
 
 Run `date -u +%FT%TZ` and record **baseline start**. Leave the existing workload unchanged
@@ -43,6 +52,8 @@ for **at least 2 minutes** (longer if the sheet says so), then run the same comm
 and record **baseline end**.
 
 **Expected:** the VM storage graph is flat near zero (or at the existing workload's normal level).
+
+![Reference idle read-IOPS graph before preparing the fixture](images/02-idle-iops.png)
 
 ## 4. Measure
 
@@ -67,15 +78,26 @@ poc-fio run
   then `Saved:` with a folder name. IOPS near 100 means the cap, not the disk, set the rate.
 - Stop early with **Ctrl-C**: only the test process stops; partial results are kept.
 
+![The new fixture is prepared and ready for the read workload](images/03-prepared-fixture.png)
+
+![Reference workload progress and per-repeat results](images/04-read-results.png)
+
 ## 5. Read the console graphs
 
-For each measured window on your sheet, in **Metrics → Storage** note read/write IOPS,
-throughput and latency. Take them from the same UTC window as `poc-fio`. If a graph is missing,
+For each measured window on your sheet, use the prepared graph links to note
+read/write IOPS, throughput and latency. Find the phase printed by `poc-fio`,
+then read the query at the evaluation time on your sheet. Its rate window sits
+inside that measured phase.
+The VM **Metrics → Storage** cards are an optional live view. Their selected
+time range smooths the values, and their numerical display was not verified in
+the rehearsal. Use the prepared **Observe → Metrics** links for your recorded results. If a graph is missing,
 write **not available**; never write 0.
 
 **Expected:** the graphs rise when the workload starts and fall when it ends, at the same times as
 your guest figures. The numbers need not match: each layer counts differently (merged or split I/O,
 background I/O, caches). Console latency is a virtual-disk average, not the guest's p95/p99.
+
+![Prepared Observe Metrics link: mapped-disk read IOPS](images/06-read-iops.png)
 
 ## 6. Recovery and cleanup
 
@@ -89,6 +111,10 @@ poc-fio cleanup
 
 **Expected:** `Removed the helper-created fixture. Result files were kept.` Give the sheet
 and the printed results folder name to the administrator.
+
+![Cleanup removes the fixture and keeps result files](images/09-cleanup.png)
+
+![Read IOPS returned to idle after the workload stopped](images/10-recovery-iops.png)
 
 ## Stop and call the administrator if
 

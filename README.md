@@ -25,8 +25,9 @@ Cases 03 and 04 measure one fixed workload while other VMs add CPU, memory or
 network demand on the same worker or link. They **prefer existing VMs, unchanged**
 (a short suitability checklist, reversible guest tools only); new lab VMs are an
 optional fallback. They target 4.21.31, with procedures checked against the 4.21
-and 4.22 documentation. Client execution and console verification remain pending;
-no ratio is claimed safe. Memory
+and 4.22 documentation. Bounded CPU and network console walkthroughs have been
+rehearsed on 4.22; client execution and actual oversubscription qualification
+remain pending. No ratio is claimed safe. Memory
 contention needs a cluster-wide setting and node swap, so it has its own gated
 administrator procedure.
 
@@ -48,6 +49,21 @@ The target is OpenShift 4.21.31. Validation boundaries differ by case:
   sources for client bare-metal iDRAC; the installed operator versions and schemas
   govern. It really power-cycles a server, so it needs administrator gates and
   approval first.
+
+- **Case 03:** CPU baseline, bounded competing load, stop checks and recovery
+  exercised in the 4.22 web console. Actual CPU oversubscription was not established.
+  Memory remains **Blocked** until a dedicated worker-only pool and host-swap
+  prerequisites are available; enabling memory density was not exercised.
+
+- **Case 04:** bounded cross-host UDP baseline, competing traffic, stop checks and
+  recovery exercised in the 4.22 web console. TCP received only a short connectivity
+  check. Physical-link oversubscription and full TCP measurements remain unverified.
+
+- **Case 05:** bounded guest read workload, exact disk mapping, Observe Metrics
+  measurements, recovery and fixture cleanup exercised in the 4.22 web console
+  on alternate shared storage. The native IOPS-card numerical display remains
+  unverified; use the prepared Observe queries. PowerFlex and Dell metrics were
+  **Not available / Not run**.
 
 Use the [recording outline](test-cases/01-scheduling-and-migration/VIDEO-OUTLINE.md)
 for a video and the [results sheet](test-cases/01-scheduling-and-migration/RESULTS-TEMPLATE.md)

@@ -52,7 +52,7 @@ Do not join on namespace alone and do not assume `/dev/vdb` is stable. Replace `
 ~~~sh
 # a. Guest (console): the device behind the directory, and its parent disk
 findmnt -n -o SOURCE,TARGET,FSTYPE -T DIR
-lsblk -s -o NAME,TYPE,SERIAL,SIZE,MOUNTPOINTS "$(findmnt -n -o SOURCE -T DIR)"
+lsblk -s -o NAME,TYPE,SERIAL,SIZE,MOUNTPOINTS "$(findmnt --nofsroot -n -o SOURCE -T DIR)"
 # b. VM disk definitions (name and optional serial), then volumes (volume name -> PVC/DataVolume)
 oc get vm VM -n NS -o jsonpath='{range .spec.template.spec.domain.devices.disks[*]}{.name}{"\t"}{.serial}{"\n"}{end}'
 oc get vm VM -n NS -o jsonpath='{range .spec.template.spec.volumes[*]}{.name}{"\t"}{.persistentVolumeClaim.claimName}{.dataVolume.name}{"\n"}{end}'
@@ -62,6 +62,8 @@ oc get vmi VM -n NS -o jsonpath='{range .status.volumeStatus[*]}{.name}{"\t"}{.t
 oc get pvc PVC -n NS -o jsonpath='{.spec.volumeName}{"\n"}'
 oc get pv PV -o jsonpath='{.spec.csi.driver}{"\t"}{.spec.csi.volumeHandle}{"\n"}'
 ~~~
+
+`--nofsroot` removes a bind or Btrfs subvolume suffix (such as `[/home]`) before passing the device to `lsblk`. It does not change the mount.
 
 Read it as: guest device (for example `vda`) = `target` in step c → the `name` beside it is the disk
 name, which should be the metric `drive` label (confirm in [section 5](#metrics)) → the volume with that name →
@@ -125,6 +127,14 @@ only inside the approved maximum and still call the result bounded.
 
 ## 5. Metrics: VM layer
 
+In **Observe → Metrics**, set **Refresh → 30 seconds** while watching a run.
+For live VM cards, select **Last 5 minutes**. Their rate window follows the
+selected range, which can smooth a short run heavily. Use the fixed-window
+queries below for the measured figures. Choose an Observe chart span that
+includes baseline, load and recovery. Keep the exact
+UTC windows on the results sheet; a live chart is not a saved result.
+
+
 All are **counters**; use `rate()`. Console: **Observe → Metrics**, and the VM **Metrics → Storage** tab if it
 shows storage graphs. Confirm the names on the installed version
 ([KubeVirt metrics](https://kubevirt.io/monitoring/metrics.html), [REFERENCES](REFERENCES.md)).
@@ -144,7 +154,13 @@ count by (namespace, name, drive) (kubevirt_vmi_storage_iops_read_total{namespac
 
 Put the mapped disk name in the selector: `SEL` = `namespace="NS",name="VM",drive="DRIVE"`. Defaults use a
 **`[2m]` window** (at least four scrape intervals; use a longer window for a longer interval). Read the value at the
-end of each measured window, so the `[2m]` window lies inside the 180 s measured phase.
+end of each measured window, so the rate window lies inside the 180 s measured phase.
+Check actual samples with `count_over_time(kubevirt_vmi_storage_iops_read_total{SEL}[2m])`.
+If fewer than four samples are present, use a longer window that still fits entirely
+inside the measured phase (for example `[150s]`), or mark that layer **Blocked**.
+Choose the same window for all three workload repeats and re-evaluate each one;
+do not mix window lengths. Save each query, its returned series and evaluation UTC.
+The reference screenshots below illustrate the verified two-minute queries.
 
 | Quantity | Query |
 | --- | --- |
@@ -170,6 +186,26 @@ disk's latency average are different measurements; infer no backend percentile f
 
 A run is **invalid** only on I/O errors, a VM restart, pause or migration, or a change outside the plan during
 its window. Ordinary operating-system flushes are normal and do not invalidate it.
+
+### Native-card display limitation
+
+In the 4.22 rehearsal, the native Storage IOPS card did not match its linked
+query while a read workload ran; reopening the page did not resolve it. Its
+numerical readout remains **unverified**. Use the mapped-disk **Observe → Metrics**
+queries as the recorded VM-disk layer, checking the actual series and windows.
+Record the display limitation; do not change the VM or cluster to force a chart.
+
+### Console query examples
+
+These redacted views use the mapped disk and fixed `[2m]` windows. Use your own
+VM, disk and UTC windows. The read workload is capped, so these are reference
+measurements rather than storage-capacity results.
+
+![Mapped disk read IOPS](images/06-read-iops.png)
+
+![Mapped disk weighted average read latency in milliseconds](images/07-read-latency.png)
+
+![Mapped disk read and write throughput in KiB/s](images/08-throughput.png)
 
 <a id="optional"></a>
 
@@ -198,7 +234,7 @@ oc create -f optional/01-storage-vm.yaml
 Continue only if dry-run succeeds and neither named VM nor root-disk DataVolume/PVC already exists;
 `create` refuses an existing VM. A dry-run cannot create a namespace for subsequent requests.
 After the owner approves starting it, open **Virtualization → VirtualMachines**, project `perf-storage-lab`,
-select `storage-iops-vm`, click **Start**, wait for **Running**, then open **Console → Serial console**.
+select `storage-iops-vm`, choose **Actions → Control → Start**, and wait for **Running**. Open **Console**, choose **Serial console** from the **VNC console** dropdown, click inside the terminal and press **Enter**.
 Use the prepared image only if its tools and access have been checked. Starting the VM is a separate decision. The test directory is on the **root disk**; do not require an extra disk, `mkfs` or a raw
 device. If an approved separate, already formatted and mounted filesystem exists, use its directory and map it as in
 section 2.

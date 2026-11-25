@@ -14,7 +14,7 @@ Approved by and date: ____   Max IOPS cap: ____   Abort rule and contact: ____
 | --- | --- |
 | VM / project | |
 | Directory and filesystem under test; root disk? (OS background I/O) | |
-| Guest device and serial (or "inferred") | |
+| Guest device and serial (or verified VMI target mapping) | |
 | VM disk name (`drive` label) / PVC / PV | |
 | CSI driver / volumeHandle | |
 | Backend volume (Dell layer) | Not run |
@@ -24,6 +24,8 @@ Approved by and date: ____   Max IOPS cap: ____   Abort rule and contact: ____
 Existing application / `poc-fio`: ____   Pattern: ____   Block size: ____   Queue depth: ____
 Fixture size: ____ (written once by prepare)   Cap: ____ IOPS   Warm-up ____ s  Measure ____ s  Repeats ____
 Changes to VM/guest and how undone: ____
+
+Prepared Observe links: IOPS ____   Throughput ____   Latency ____
 
 ## Measurements
 
@@ -37,6 +39,20 @@ Changes to VM/guest and how undone: ____
 
 Queries saved (private location): ____   Series with no data (record as not available, never 0): ____
 Scrape interval: ____   Rate window used: ____ (default 2m, at least 4 intervals)
+
+The table above records the guest phase windows. Record each VM query's actual
+window below; the default final two minutes lie **inside** the guest's three-minute
+measurement. Compare trends, not identical-window arithmetic.
+
+| Phase / repeat | VM query evaluation UTC | Rate window start/end UTC | Samples inside window | Saved query and returned series reference |
+| --- | --- | --- | --- | --- |
+| Baseline idle | | | | |
+| Workload 1 | | | | |
+| Workload 2 | | | | |
+| Workload 3 | | | | |
+| Recovery idle | | | | |
+
+Native card discrepancy or missing display (if any): ____
 
 ## Layers
 
@@ -54,4 +70,4 @@ Required layers agreed before the run (tick): [ ] guest workload  [ ] VM disk me
 | --- | --- |
 | Native case (**Pass only if every required layer above has evidence**; otherwise Blocked / Not run) | |
 | Optional layers (separate; do not change the native result) | |
-| Fixture and helper files removed; VM unchanged | |
+| Fixture removed; helper disposition recorded; existing VM unchanged | |
