@@ -70,10 +70,10 @@ The target is OpenShift 4.21.31. Validation boundaries differ by case:
   unverified; use the prepared Observe queries. PowerFlex and Dell metrics were
   **Not available / Not run**.
 
-- **Case 35:** the dedicated-provider path, first login, cluster-admin access,
-  password rotation with fresh login checks, and cleanup were exercised on 4.22
-  using the console and administrator commands. The 4.21 procedure was checked
-  against documentation; it was not run on 4.21. Managed identity-source changes
+- **Case 35:** console provider setup, first login, cluster-admin access and cleanup
+  were exercised on 4.22. Standard `htpasswd` and `oc` file/Secret create, add, rotate
+  and remove commands were verified separately on 4.22 using temporary Secrets.
+  The 4.21 steps were checked against documentation only. Managed identity sources
   remain unverified.
 
 Use the [recording outline](test-cases/01-scheduling-and-migration/VIDEO-OUTLINE.md)

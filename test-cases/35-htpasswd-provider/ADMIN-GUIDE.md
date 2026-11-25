@@ -1,19 +1,19 @@
 # Administrator guide: HTPasswd user management
 
-> **Verification status.** The create-provider path (console add, first login, `cluster-admin`
-> binding, password rotation and cleanup) was rehearsed in the OpenShift 4.22 console. The
-> steps were cross-checked against the 4.21 and 4.22 documentation; there was no 4.21 runtime
-> rehearsal. Changes to an existing externally managed password source, a GitOps integration
-> or an existing production identity provider were **not** rehearsed and are not verified.
-> The installed version's documentation governs.
+> **Verification status.** Console provider setup, first login, `cluster-admin` access and
+> cleanup were exercised on OpenShift 4.22. The standard file/Secret create, add, rotate and
+> remove commands were verified separately on 4.22 using temporary Secrets. The 4.21 steps
+> were checked against documentation only. Managed password sources, GitOps integration
+> and existing production identity providers remain unverified.
 
-The customer follows the [walkthrough](RUNBOOK.md). This guide holds the commands. The only
-steps that need a command line are changing the bcrypt hashes, done by one helper:
-[`scripts/htpasswd-secret-user.py`](scripts/htpasswd-secret-user.py) `SECRET_NAME USER_NAME add|rotate|remove`.
+The customer follows the [walkthrough](RUNBOOK.md). This guide holds the commands. They are
+standard Linux jump-host commands from Red Hat's *Update users for an htpasswd identity
+provider* procedure ([sources](REFERENCES.md)). Passwords are typed at the `htpasswd` prompt
+(no `-b`), so they never appear in arguments or shell history.
 
-**Run every command in this guide from `test-cases/35-htpasswd-provider` inside your
-downloaded checkout** (the `scripts/...` paths are relative to it). Hash files are written
-outside the checkout by absolute path, so the working directory never matters for them.
+**Scope of the file/Secret commands:** a dedicated, unmanaged HTPasswd-only Secret. If GitOps
+or an operator owns the source, or the Secret holds other data or metadata that must be
+preserved, its owner updates the owning source instead of using this simple replacement.
 
 <a id="prepare"></a>
 
@@ -22,12 +22,22 @@ outside the checkout by absolute path, so the working directory never matters fo
 - [ ] The agreed user name and who it is for. `cluster-admin` gives that user full control of the cluster, so grant it only to the agreed user.
 - [ ] A **second administrator session** (different browser profile or a kubeconfig) that stays open until the new login is verified.
 - [ ] Inventory of providers, users and Secret ownership (below).
-- [ ] `python3`, `htpasswd` (Apache utils) and `oc` (logged in) on the admin workstation.
+- [ ] A Linux jump host with `oc` (logged in), `htpasswd` and `base64`.
 - [ ] An unused test user name: letters, digits and `. _ @ + -` only.
 
-Use a Linux administrator workstation or jump host for the short commands. On RHEL, install
-the hash tool with `sudo dnf install httpd-tools python3`. Get `oc` from the console's
+On RHEL, install the hash tool with `sudo dnf install httpd-tools`. Get `oc` from the console's
 **Help → Command line tools** page if it is not already installed.
+
+Use a **Bash** terminal. The first command stops on errors, including a failed download,
+so an empty file is not uploaded. Make a private folder **outside the checkout** (once per shell). The commands below use this
+file, called `PRIVATE_FILE`: `$HOME/poc-private/htpasswd/users.htpasswd`.
+
+```bash
+set -euo pipefail
+umask 077
+mkdir -p "$HOME/poc-private/htpasswd"
+chmod 700 "$HOME/poc-private" "$HOME/poc-private/htpasswd"
+```
 
 ### Inventory
 
@@ -52,12 +62,14 @@ fight. Do the same for the OAuth resource if it is managed.
 
 | Situation | Path |
 | --- | --- |
-| Existing HTPasswd provider, Secret **not** managed by GitOps or External Secrets | **Reuse:** the helper changes only the Secret's `htpasswd` content |
-| Secret or OAuth resource managed by GitOps or External Secrets (even if you own it) | **Owner/source path:** change the owning source; the helper refuses these and there is no bypass |
+| Existing HTPasswd provider, dedicated Secret **not** managed by GitOps or External Secrets | **Reuse:** retrieve the file, change one user's line, replace the Secret (3.1) |
+| Secret or OAuth resource managed by GitOps or an operator (even if you own it) | **Owner/source path:** change the owning source; do not replace the Secret live |
 | No HTPasswd provider, or you want a separate demonstration provider | **Create:** new file (`-c`) and a new dedicated provider. Other providers may exist; the provider and user names must be unused and the OAuth owner must permit it |
 
-If an existing provider's Secret holds only one user, do not remove that user (the helper refuses
-it): the provider is not yours to delete.
+Never remove the last user of a retained provider; the provider is not yours to delete.
+
+Only one administrator updates this Secret at a time. If another edit occurs, retrieve
+the latest file and repeat your change before replacing the Secret.
 
 <a id="check"></a>
 
@@ -78,36 +90,30 @@ Run it once.
 
 ## Stage 3: Perform
 
-### 3.1 Add the user's hash (the only CLI-required step)
+### 3.1 Create or update the password file
 
-**Reuse path (existing Secret):** run the helper. It prompts for the password through
-`htpasswd -B`, so the password never appears in arguments, environment or shell history.
-
-```sh
-scripts/htpasswd-secret-user.py SECRET_NAME TEST_USER add
-```
-
-The helper reads the current Secret, changes only that user's line and replaces the Secret using
-the `resourceVersion` it read: a concurrent edit makes it fail rather than be overwritten. Other
-users, other keys, labels and annotations are preserved. It uses private temporary files
-(`0700`/`0600`) that it deletes afterwards (deletion is not secure erasure on an SSD), prints no
-Secret, hash or password, and refuses Secrets owned by Argo CD, Flux or External Secrets: edit
-the owning source instead. It does not touch the OAuth resource, roles or tokens. Use
-`--help` for details.
-
-**Create path (no HTPasswd provider yet):** make a new file in a private folder **outside the
-checkout**, by absolute path, then upload it in 3.2. `-c` creates (and would erase an existing
-file), so use it only here:
+**Create path (no HTPasswd provider yet).** `-c` creates a **new** file and would erase an
+existing one, so use it only here. `htpasswd` prompts for the password:
 
 ```sh
-umask 077
-mkdir -p "$HOME/poc-private/htpasswd"
-chmod 700 "$HOME/poc-private" "$HOME/poc-private/htpasswd"
-htpasswd -c -B "$HOME/poc-private/htpasswd/users.htpasswd" TEST_USER
+htpasswd -c -B "$HOME/poc-private/htpasswd/users.htpasswd" poc-user
 ```
 
-Upload `$HOME/poc-private/htpasswd/users.htpasswd` in 3.2 and delete it in Stage 4. Never put it
-in the repository, tickets, chat or screenshots.
+Replace `poc-user` with the agreed user. Upload this file in 3.2 and delete it in Stage 4.
+Never put it in the repository, tickets, chat or screenshots.
+
+**Reuse path (existing Secret).** Retrieve the latest file first every time, then change it, then
+replace the Secret. `SECRET_NAME` is the Secret referenced by this provider: read it from the OAuth YAML
+(`htpasswd.fileData.name`). No `-c`: `htpasswd -B` adds the user, or changes the password if the
+line already exists, and leaves other users' lines alone.
+
+```sh
+oc get secret SECRET_NAME -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 --decode > "$HOME/poc-private/htpasswd/users.htpasswd"
+htpasswd -B "$HOME/poc-private/htpasswd/users.htpasswd" TEST_USER
+oc create secret generic SECRET_NAME --from-file=htpasswd="$HOME/poc-private/htpasswd/users.htpasswd" --dry-run=client -o yaml -n openshift-config | oc replace -f -
+```
+
+Do not edit the OAuth resource; the provider list is untouched.
 
 ### 3.2 Provider and Secret
 
@@ -123,17 +129,15 @@ in the repository, tickets, chat or screenshots.
   [entry snippet](templates/oauth-htpasswd-entry.snippet.yaml) to the existing OAuth list; do
   **not** apply it as a resource. If you create the Secret yourself, base the
   [template](templates/htpasswd-secret.template.yaml) on the private file.
-- **Reuse path:** the helper in 3.1 already updated the Secret. If it reports a conflict,
-  someone else changed the Secret: re-run it, do not force. Console users can view the Secret,
-  but do not paste hashes by hand.
+- **Reuse path:** the commands in 3.1 already replaced the Secret. Do not paste hashes into the
+  console by hand.
 
 Wait for the rollout. After **Add**, the page links **View authentication conditions for
 reconfiguration status.** (or use **Administration → Cluster Settings → ClusterOperators →
-authentication**). Wait for Available True, Progressing False, Degraded False. CLI alternative
-(Ctrl+C once it settles):
+authentication**). Wait for Available True, Progressing False, Degraded False. CLI alternative (run again until it settles):
 
 ```sh
-oc get clusteroperator authentication -w
+oc get clusteroperator authentication
 ```
 
 The provider's `mappingMethod` is `claim`: the identity is `PROVIDER_NAME:TEST_USER` and a login
@@ -170,11 +174,17 @@ the test user should say `yes`.
 
 Keep the second administrator session open until this works.
 
+<a id="rotate"></a>
+
 ### 3.5 Rotate the password
 
+Retrieve the latest file, change only this user's password (no `-c`), replace the Secret:
+
 ```sh
-scripts/htpasswd-secret-user.py SECRET_NAME TEST_USER rotate
-oc get clusteroperator authentication -w
+oc get secret SECRET_NAME -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 --decode > "$HOME/poc-private/htpasswd/users.htpasswd"
+htpasswd -B "$HOME/poc-private/htpasswd/users.htpasswd" TEST_USER
+oc create secret generic SECRET_NAME --from-file=htpasswd="$HOME/poc-private/htpasswd/users.htpasswd" --dry-run=client -o yaml -n openshift-config | oc replace -f -
+oc get clusteroperator authentication
 ```
 
 After the rollout, sign the test user out and log in with the **new** password (works).
@@ -189,7 +199,7 @@ revoked access.
 ### Recovery and rollback
 
 Never restore an old saved copy of the file: it would drop users added since and could
-revive a retired password. Re-run the helper (`rotate` or `remove`) against the current Secret.
+revive a retired password. Retrieve the current Secret again and repeat the change.
 If the operator does not settle, check its conditions and the OAuth pods, do not edit further, and
 keep the second session.
 
@@ -197,8 +207,8 @@ keep the second session.
 
 Remove **only what this test created**.
 
-**Cleanup, provider created by this test** (the Secret then holds only the test user, so never
-run the helper's `remove`):
+**Cleanup, provider created by this test** (the Secret then holds only the test user, so do not
+use `htpasswd -D`; remove the whole provider, admin binding first):
 
 1. `oc delete clusterrolebinding BINDING_NAME` (console: **User Management → RoleBindings**).
 2. Remove **only this provider**: on the **OAuth** page, in the **Identity providers** table, open
@@ -212,19 +222,37 @@ run the helper's `remove`):
    `oc delete oauthaccesstokens --field-selector=userName=TEST_USER`. Never list token values.
 7. `rm "$HOME/poc-private/htpasswd/users.htpasswd"`.
 
-**Cleanup, existing unmanaged provider reused** (keep the provider, Secret and other users):
+**Cleanup, existing unmanaged provider reused** (remove only the test user's line and its own
+account resources; keep the provider, Secret and other users):
 
 ```sh
 oc delete clusterrolebinding BINDING_NAME
-scripts/htpasswd-secret-user.py SECRET_NAME TEST_USER remove
-oc get clusteroperator authentication -w
-oc delete user TEST_USER
-oc delete identity PROVIDER_NAME:TEST_USER
+oc get secret SECRET_NAME -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 --decode > "$HOME/poc-private/htpasswd/users.htpasswd"
+cut -d: -f1 "$HOME/poc-private/htpasswd/users.htpasswd"
 ```
 
-If the test user is the provider's only user, stop: do not delete the provider or Secret; ask its
-owner. Never remove existing providers, users or Secrets. If the account is retired, also run
-`oc delete oauthaccesstokens --field-selector=userName=TEST_USER`.
+The last command shows user names only. **Confirm another user will remain** after the
+test user is removed. If not, stop and contact the provider owner. Then continue:
+
+```sh
+htpasswd -D "$HOME/poc-private/htpasswd/users.htpasswd" TEST_USER
+oc create secret generic SECRET_NAME --from-file=htpasswd="$HOME/poc-private/htpasswd/users.htpasswd" --dry-run=client -o yaml -n openshift-config | oc replace -f -
+oc get clusteroperator authentication
+```
+
+Wait for Available True, Progressing False and Degraded False. Run the last command
+again if needed. Once settled, remove the retired account resources:
+
+```sh
+oc delete user TEST_USER
+oc delete identity PROVIDER_NAME:TEST_USER
+oc delete oauthaccesstokens --field-selector=userName=TEST_USER
+rm "$HOME/poc-private/htpasswd/users.htpasswd"
+```
+
+Do not remove the last user of a retained provider. Never delete the provider or Secret on this
+path, and never remove existing providers, users or Secrets. The `oauthaccesstokens` line applies
+when the account is retired (not kept).
 
 **Keep-account path:** keep the provider, Secret, user and binding. Delete the local hash file,
 record the owner and review date, and apply your own credential policy. The account remains full
@@ -238,5 +266,5 @@ secure erasure on an SSD.
 | Login says invalid | Secret updated? operator settled? hash from `-B`? name case |
 | Login refused after a collision | Another provider owns that user name (`claim`) |
 | Existing users broke | Stop, keep the administrator session open, and check the authentication operator and owning source; do not reset other users' passwords |
-| Change reverted | A GitOps or external-secrets owner reconciled it; edit the owning source |
+| Change reverted | A GitOps or operator owner reconciled it; edit the owning source |
 | Provider missing in console | OAuth list edited elsewhere; compare with the inventory |

@@ -1,9 +1,9 @@
 # HTPasswd user management: customer walkthrough
 
-> **Verification status.** The create-provider path was rehearsed in the OpenShift 4.22
-> console and the steps were cross-checked against the 4.21 documentation (no 4.21 runtime
-> rehearsal). Existing externally managed password sources and GitOps integrations were not
-> rehearsed.
+> **Verification status.** Console provider setup, login, `cluster-admin` access and cleanup
+> were exercised on 4.22. The administrator guide’s standard file/Secret commands were
+> verified separately on 4.22. The 4.21 steps were checked against documentation only.
+> Managed password sources and GitOps integrations remain unverified.
 
 **Goal:** see a local test user added, made a cluster administrator and given a new
 password, while existing logins keep working.
@@ -52,9 +52,9 @@ Do not continue without it.
 
 **Create path:** the uploaded file already contains the test user; continue to C.
 
-**Reuse path:** the administrator adds the user with the helper's private password prompt in
-the [admin guide](ADMIN-GUIDE.md#user). It updates the existing unmanaged Secret and leaves the
-other users' lines untouched.
+**Reuse path:** the administrator retrieves the Secret's file, adds the user with the `htpasswd -B`
+password prompt and replaces the Secret, as shown in the [admin guide](ADMIN-GUIDE.md#user).
+The other users' lines are left untouched.
 
 ### C. First login and cluster-admin
 
@@ -76,7 +76,8 @@ other users' lines untouched.
 
 ### D. Rotate the password
 
-1. The administrator changes only this user's password with the helper, then waits for the
+1. The administrator changes only this user's password with `htpasswd -B` and replaces the Secret
+([admin guide](ADMIN-GUIDE.md#rotate)), then waits for the
    authentication ClusterOperator to settle.
 2. Sign out the test user. Sign in with the **new** password: works. Sign out again,
    then try the **old** password once: it is refused (for example, "Invalid login or
@@ -93,7 +94,8 @@ Follow the path on your sheet.
   test created, only that provider is then removed (OAuth → Identity providers table →
   **Actions** on its row → **Remove identity provider**), followed by its generated Secret and
   the test User, Identity and tokens. For a reused provider, only the test user's line is
-  removed. Other providers and users are not touched.
+  removed (`htpasswd -D`), never the provider or Secret, and never the provider's last user.
+  Other providers and users are not touched.
 - **Keep-account path:** keep the account for real use; sign off the sheet and record the
   owner and the approval, then follow your own password policy.
 
