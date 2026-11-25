@@ -11,6 +11,7 @@ Hands-on tests for VMware/vCenter teams learning OpenShift Virtualization.
 | 03 — CPU and memory oversubscription (**client validation pending**) | **[Run the test](test-cases/03-cpu-memory-oversubscription/RUNBOOK.md)** | [Prepare](test-cases/03-cpu-memory-oversubscription/ADMIN-GUIDE.md#prepare) and [memory density](test-cases/03-cpu-memory-oversubscription/MEMORY-DENSITY.md) |
 | 04 — Network oversubscription (**client validation pending**) | **[Run the test](test-cases/04-network-oversubscription/RUNBOOK.md)** | [Prepare](test-cases/04-network-oversubscription/ADMIN-GUIDE.md#prepare) |
 | 05 — Storage IOPS (**client validation pending**; Dell layer **deferred**) | **[Run the test](test-cases/05-storage-iops/RUNBOOK.md)** | [Prepare](test-cases/05-storage-iops/ADMIN-GUIDE.md#prepare) |
+| 35 — HTPasswd Provider | **[Run the test](test-cases/35-htpasswd-provider/RUNBOOK.md)** | [Prepare](test-cases/35-htpasswd-provider/ADMIN-GUIDE.md#prepare) |
 
 Case 01 covers approved-host placement, VM separation, an impossible rule,
 manual live migration and automatic placement-rule correction. Each test
@@ -34,6 +35,10 @@ administrator procedure.
 Case 05 measures IOPS, latency and throughput using an existing VM and its existing workload,
 or an optional bounded read-only fio workload. PowerFlex measurements are recorded separately;
 CSM-exported metrics require an existing installation. The Dell procedure is deferred.
+
+Case 35 adds a local HTPasswd login, grants the test user cluster-admin, rotates its
+password and removes the demonstration access. It includes console steps, redacted
+screenshots and administrator commands.
 
 The administrator prepares the cluster and VMs first. Customers then follow
 one short walkthrough; detailed operator checks and cleanup stay in the
@@ -64,6 +69,12 @@ The target is OpenShift 4.21.31. Validation boundaries differ by case:
   on alternate shared storage. The native IOPS-card numerical display remains
   unverified; use the prepared Observe queries. PowerFlex and Dell metrics were
   **Not available / Not run**.
+
+- **Case 35:** console provider setup, first login, cluster-admin access and cleanup
+  were exercised on 4.22. Standard `htpasswd` and `oc` file/Secret create, add, rotate
+  and remove commands were verified separately on 4.22 using temporary Secrets.
+  The 4.21 steps were checked against documentation only. Managed identity sources
+  remain unverified.
 
 Use the [recording outline](test-cases/01-scheduling-and-migration/VIDEO-OUTLINE.md)
 for a video and the [results sheet](test-cases/01-scheduling-and-migration/RESULTS-TEMPLATE.md)
