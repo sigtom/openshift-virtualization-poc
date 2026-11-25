@@ -79,8 +79,10 @@ the latest file and repeat your change before replacing the Secret.
 oc whoami                                              # your existing admin
 oc get clusteroperator authentication                  # Available=True, Progressing=False, Degraded=False
 oc get oauth cluster -o jsonpath='{.spec.identityProviders[*].name}{"\n"}'   # providers match the inventory
-oc get secret SECRET_NAME -n openshift-config -o name  # reuse path only
 ```
+
+**Reuse path only:** also confirm the existing Secret with
+`oc get secret SECRET_NAME -n openshift-config -o name`. Skip this for a new provider.
 
 Ready only if the operator is settled, the providers match the inventory, the second session
 works and the user name is not already used by another provider's identity (`oc get identities`).
