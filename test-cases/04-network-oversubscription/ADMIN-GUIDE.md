@@ -98,6 +98,13 @@ sizes and placement on the sheet.
 Do **not** edit cloud-init, users or storage, delete guest data, or restart workloads
 to make the test work. Anything needing a **VM restart or configuration edit** is in 3.5.
 
+Console access: open the VM's **Console** tab and choose **Serial console** in the dropdown.
+After the helper commands are in place, `poc-iperf-server start` confirms its listeners (address hidden in this example):
+
+![Choose Serial console from the console dropdown](images/00-serial-console.png)
+
+![Measured server listener confirmation; address hidden](images/02-measured-listeners.png)
+
 ### 3.4 Existing application as the measured workload
 
 An existing application path can be the approved representative workload. Freeze its
@@ -267,6 +274,10 @@ For short runs, use **Last 5 minutes** in VM Metrics. The native graphs smooth
 values over their selected range; use the fixed `[1m]` queries below to inspect
 short changes over a longer chart span.
 
+
+Example of a VM **Metrics** tab with the **Network** section expanded:
+
+![VM Metrics: expand Network and choose the tested interface](images/06-network-graphs.png)
 
 Console: VM **Metrics** tab; **Observe → Dashboards** (*Node Exporter / USE Method /
 Node*, *Node Exporter / Nodes*), choose the node and the UTC window (names pending

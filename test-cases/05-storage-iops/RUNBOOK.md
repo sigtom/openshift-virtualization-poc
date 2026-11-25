@@ -20,7 +20,7 @@ sheet**; the pictures are not results for your environment.
    already filtered to your VM disk. Keep them open for recording results.
 3. Open **Console**, use the **VNC console** dropdown to select **Serial console**, wait for connection, click inside the terminal and press **Enter**. Log in with your existing guest account. Type the commands below there.
 
-![Choose Serial console from the console dropdown](images/00-serial-console.png)
+   ![Choose Serial console from the console dropdown](images/00-serial-console.png)
 
 **Expected:** VM Running, console prompt. Keep the VM's current workload as it is.
 
@@ -78,7 +78,11 @@ poc-fio run
   then `Saved:` with a folder name. IOPS near 100 means the cap, not the disk, set the rate.
 - Stop early with **Ctrl-C**: only the test process stops; partial results are kept.
 
+After `prepare` and `status`, the console should confirm the fixture (example screen):
+
 ![The new fixture is prepared and ready for the read workload](images/03-prepared-fixture.png)
+
+While `run` works and after it finishes, the console shows each repeat and the saved folder:
 
 ![Reference workload progress and per-repeat results](images/04-read-results.png)
 
@@ -113,6 +117,8 @@ poc-fio cleanup
 and the printed results folder name to the administrator.
 
 ![Cleanup removes the fixture and keeps result files](images/09-cleanup.png)
+
+Compare the read-IOPS graph over the recovery window (example of an idle graph after the workload stopped):
 
 ![Read IOPS returned to idle after the workload stopped](images/10-recovery-iops.png)
 

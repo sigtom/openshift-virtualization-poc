@@ -61,6 +61,10 @@ and schedulable. Open **Virtualization → VirtualMachines**, project
 
 **Expected:** two Ready pool nodes; one Stopped VM.
 
+Example of the starting VM state (a preparation view; it is not a test result):
+
+![recovery-vm on its Overview page with status Stopped](images/01-new-vm-stopped.png)
+
 <details>
 <summary>CLI</summary>
 

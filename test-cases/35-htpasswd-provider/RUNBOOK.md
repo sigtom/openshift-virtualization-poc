@@ -38,15 +38,16 @@ Do not continue without it.
    Write only that name on your sheet; do not edit the YAML.
    **Reuse path:** nothing is added here; the administrator updates the existing provider's
    Secret in step B instead.
+
+   ![HTPasswd provider setup form before uploading the password file](images/01-provider-setup-form.png)
+
+   ![Dedicated demonstration provider added; existing provider names are hidden](images/03-provider-added.png)
+
 3. Click **View authentication conditions for reconfiguration status.** (or open
    **Administration → Cluster Settings → ClusterOperators → authentication**). Wait for
    Available True, Progressing False, Degraded False. This can take minutes.
 
-![HTPasswd provider setup form before uploading the password file](images/01-provider-setup-form.png)
-
-![Dedicated demonstration provider added; existing provider names are hidden](images/03-provider-added.png)
-
-![Settled authentication conditions; dates are hidden](images/04-authentication-ready.png)
+   ![Settled authentication conditions; dates are hidden](images/04-authentication-ready.png)
 
 ### B. Test user
 
@@ -63,16 +64,18 @@ The other users' lines are left untouched.
    succeeds, but node-administration access has not been granted yet.
 2. In your retained administrator session: **User Management → Users**. The user now exists (it was created by the login). Do not
    create it by hand.
+
+   ![Test user and its provider identity created by the first login](images/05-user-created.png)
+
 3. In your administrator session: **User Management → RoleBindings → Create binding**.
    Binding type **Cluster-wide role binding**, name from your sheet, role **cluster-admin**,
    subject **User**, the test user's name. Create.
+
+   ![Example cluster-wide binding with the cluster-admin role and a User subject, before clicking Create](images/02-cluster-admin-binding-form.png)
+
+   ![The newly created cluster-wide binding](images/06-admin-binding-created.png)
+
 4. In the test user's window, reload. Expected: **Compute → Nodes** now opens.
-
-![Example cluster-wide binding with the cluster-admin role and a User subject, before clicking Create](images/02-cluster-admin-binding-form.png)
-
-![Test user and its provider identity created by the first login](images/05-user-created.png)
-
-![The newly created cluster-wide binding](images/06-admin-binding-created.png)
 
 ### D. Rotate the password
 
@@ -96,10 +99,17 @@ Follow the path on your sheet.
   the test User, Identity and tokens. For a reused provider, only the test user's line is
   removed (`htpasswd -D`), never the provider or Secret, and never the provider's last user.
   Other providers and users are not touched.
+
+  ![Remove only the dedicated demonstration provider](images/08-remove-provider-confirmation.png)
+
+  After cleanup, filter **User Management → Users** by the exact test user name.
+  The example below shows **No Users found**; the administrator also checks the other account
+  resources listed in the cleanup procedure.
+
+  ![Users filtered to poc-user after cleanup: No Users found](images/10-user-cleanup.png)
+
 - **Keep-account path:** keep the account for real use; sign off the sheet and record the
   owner and the approval, then follow your own password policy.
-
-![Remove only the dedicated demonstration provider](images/08-remove-provider-confirmation.png)
 
 ## Stop and call the administrator if
 
