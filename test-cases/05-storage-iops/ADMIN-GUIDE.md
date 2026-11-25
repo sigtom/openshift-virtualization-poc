@@ -69,6 +69,10 @@ Read it as: guest device (for example `vda`) = `target` in step c → the `name`
 name, which should be the metric `drive` label (confirm in [section 5](#metrics)) → the volume with that name →
 PVC → PV → volumeHandle. Where a serial is set, it must also match `lsblk`'s SERIAL.
 
+Step a in the VM's **Console** tab (**Serial console**), on an example VM; read the device name and SERIAL columns:
+
+![Identify the guest device and its disk serial](images/01-disk-mapping.png)
+
 If the device is a logical volume or the target, serial or name do not line up **unambiguously**, the
 mapping is **ambiguous: that layer is Blocked**. Size or order is not accepted as a mapping. Do not edit the VM
 (for example to add a serial) to resolve it. The root disk also carries OS background I/O; say so on the sheet.
@@ -98,6 +102,10 @@ Smallest reversible change, as an ordinary guest user, **no restart**:
    AppStream `fio` package; verify). The owner can run `sudo dnf install fio`; the test account needs no sudo.
    `fio --version` must print `fio-3.x`; the helper refuses an incompatible tool.
 3. Do not change guest defaults, add disks or edit cloud-init to make this work.
+
+Console access: on the VM's **Console** tab choose **Serial console** in the dropdown:
+
+![Choose Serial console from the console dropdown](images/00-serial-console.png)
 
 Helper properties (check them in review): one shared non-blocking lock covers `prepare`, `run` and `cleanup`
 (an overlapping command is refused); it refuses symlinked, device or virtual paths, unusual characters and
@@ -257,7 +265,9 @@ section 2.
 ## 8. Cleanup (only what this case created)
 
 **Guest** (the customer ran `poc-fio cleanup`; check `poc-fio status` reports no fixture and that no
-`.poc-fio-*` folder remains under the approved directory):
+`.poc-fio-*` folder remains under the approved directory). Example of the customer's cleanup console:
+
+![Cleanup removes the fixture and keeps result files](images/09-cleanup.png)
 
 ~~~sh
 rm -f "$HOME/poc-bin/poc-fio"

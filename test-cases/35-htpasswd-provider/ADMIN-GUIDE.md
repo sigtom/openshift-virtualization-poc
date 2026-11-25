@@ -26,7 +26,10 @@ preserved, its owner updates the owning source instead of using this simple repl
 - [ ] An unused test user name: letters, digits and `. _ @ + -` only.
 
 On RHEL, install the hash tool with `sudo dnf install httpd-tools`. Get `oc` from the console's
-**Help → Command line tools** page if it is not already installed.
+**Help → Command line tools** page if it is not already installed. Choose the download for your
+jump host's operating system and CPU architecture.
+
+![Command Line Tools page with Linux oc downloads](images/09-command-line-tools.png)
 
 Use a **Bash** terminal. The first command stops on errors, including a failed download,
 so an empty file is not uploaded. Make a private folder **outside the checkout** (once per shell). The commands below use this
@@ -131,6 +134,15 @@ Do not edit the OAuth resource; the provider list is untouched.
   [entry snippet](templates/oauth-htpasswd-entry.snippet.yaml) to the existing OAuth list; do
   **not** apply it as a resource. If you create the Secret yourself, base the
   [template](templates/htpasswd-secret.template.yaml) on the private file.
+
+  The empty form, before a file is chosen (names and layout only; no file contents):
+
+  ![HTPasswd provider setup form before uploading the password file](images/01-provider-setup-form.png)
+
+  After **Add**, the provider appears in the **Identity providers** table (existing provider names are hidden in this example):
+
+  ![Dedicated demonstration provider added; existing provider names are hidden](images/03-provider-added.png)
+
 - **Reuse path:** the commands in 3.1 already replaced the Secret. Do not paste hashes into the
   console by hand.
 
@@ -141,6 +153,10 @@ authentication**). Wait for Available True, Progressing False, Degraded False. C
 ```sh
 oc get clusteroperator authentication
 ```
+
+Settled conditions look like this (dates are hidden):
+
+![Settled authentication conditions; dates are hidden](images/04-authentication-ready.png)
 
 The provider's `mappingMethod` is `claim`: the identity is `PROVIDER_NAME:TEST_USER` and a login
 whose user name is already taken by an identity from another provider is **refused**, which
@@ -157,13 +173,24 @@ oc get user TEST_USER
 oc get identity PROVIDER_NAME:TEST_USER
 ```
 
+In the console, **User Management → Users** shows the same User and its provider identity:
+
+![Test user and its provider identity created by the first login](images/05-user-created.png)
+
 Do not create a `User` yourself and do not put a password in any object.
 
 ### 3.4 Grant cluster-admin (explicit full privilege)
 
 Console: **User Management → RoleBindings → Create binding → Cluster-wide role binding**, role
-`cluster-admin`, subject User `TEST_USER`. CLI equivalent, or the
-[template](templates/cluster-admin-binding.template.yaml):
+`cluster-admin`, subject User `TEST_USER`. Example form before **Create**:
+
+![Example cluster-wide binding with the cluster-admin role and a User subject, before clicking Create](images/02-cluster-admin-binding-form.png)
+
+The binding's details page after creation:
+
+![The newly created cluster-wide binding](images/06-admin-binding-created.png)
+
+CLI equivalent, or the [template](templates/cluster-admin-binding.template.yaml):
 
 ```sh
 oc adm policy add-cluster-role-to-user cluster-admin TEST_USER
@@ -216,6 +243,9 @@ use `htpasswd -D`; remove the whole provider, admin binding first):
 2. Remove **only this provider**: on the **OAuth** page, in the **Identity providers** table, open
    **Actions** (three dots) on **only this provider's row** → **Remove identity provider** →
    **Remove**. Names in the table are not links. Confirm the remaining list equals the inventory.
+
+   ![Remove only the dedicated demonstration provider](images/08-remove-provider-confirmation.png)
+
 3. Wait for the authentication operator: Available True, Progressing False, Degraded False.
 4. `oc delete secret SECRET_NAME -n openshift-config` (only the generated Secret this test
    created; removing the provider does not delete it).
@@ -255,6 +285,12 @@ rm "$HOME/poc-private/htpasswd/users.htpasswd"
 Do not remove the last user of a retained provider. Never delete the provider or Secret on this
 path, and never remove existing providers, users or Secrets. The `oauthaccesstokens` line applies
 when the account is retired (not kept).
+
+After retiring the account, open **User Management → Users**, filter by the exact test user
+name and confirm it is absent. This checks the User object only; also complete the Identity,
+token and binding cleanup above.
+
+![Users filtered to poc-user after cleanup: No Users found](images/10-user-cleanup.png)
 
 **Keep-account path:** keep the provider, Secret, user and binding. Delete the local hash file,
 record the owner and review date, and apply your own credential policy. The account remains full

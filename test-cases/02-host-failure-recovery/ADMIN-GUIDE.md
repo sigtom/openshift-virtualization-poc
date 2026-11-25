@@ -69,6 +69,14 @@ oc get operatorgroup,subscription -n "$OPNS"
 oc get pods -n "$OPNS" -o wide     # verify surviving Ready NHC and FAR controllers off SOURCE
 ~~~
 
+In the console, **Operators → Installed Operators** shows each operator's status. Both rows below
+show **Succeeded** (preparation view only; versions and the middle column are hidden, and this does not show
+that fencing works):
+
+![Fence Agents Remediation Operator installed and Succeeded](images/02-fencing-operator-succeeded.png)
+
+![Node Health Check Operator installed and Succeeded](images/03-healthcheck-operator-succeeded.png)
+
 If `$OPNS` or its OperatorGroup is absent, use the Red Hat install procedure (Operators →
 Software Catalog). If **one** operator is missing, create **only** its Subscription (`oc create` fails safely if it exists):
 
@@ -283,6 +291,11 @@ oc create -f manifests/01-far-template.yaml
 oc create -f manifests/02-nhc-paused.yaml
 oc create -f manifests/03-recovery-vm.yaml
 ~~~
+
+The VM's **Overview** page should read **Stopped** (preparation state; the VM has not been
+started and nothing has been tested):
+
+![recovery-vm on its Overview page with status Stopped](images/01-new-vm-stopped.png)
 
 ## Gates
 

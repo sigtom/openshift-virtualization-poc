@@ -106,6 +106,10 @@ Never replace the VM's cloud-init, users or storage, never delete guest data, an
 do not restart workloads to add tools. Changes that need a **VM restart or
 configuration edit** (a disposable VM only) are in [3.5](#adapt).
 
+To confirm console access before the session, open the VM's **Console** tab and choose **Serial console** in the dropdown:
+
+![Choose Serial console from the console dropdown](images/00-serial-console.png)
+
 ### 3.4 Network path and application load
 
 - Reuse existing reachable addresses first (case 04). Services or extra interfaces only if no path exists.
@@ -336,6 +340,10 @@ Dashboards** (*Kubernetes / Compute Resources / Node (Pods)*, *Node Exporter /
 Nodes*, *Node Exporter / USE Method / Node*). Choose the test node and the run's
 UTC window. Dashboard names are **pending verification**.
 
+Example of a VM **Metrics** tab (a sample VM; open the measured VM's own tab):
+
+![VM Metrics: keep CPU and memory graphs open](images/01-vm-metrics.png)
+
 **Queries** in **Observe → Metrics**. Series below are *commonly present*;
 **verify each exists on the installed version** (type the prefix in the query
 box) and write "not available" instead of substituting. Replace `NODE` with the
@@ -378,7 +386,11 @@ windows.
 
 The memory phase needs memory density **and** swap on the test worker. The full
 step-by-step procedure (check, prepare swap, enable in the console, verify, roll back)
-is in the **[memory density appendix](MEMORY-DENSITY.md)**. Do that, then tick:
+is in the **[memory density appendix](MEMORY-DENSITY.md)**. Do that, then tick.
+For orientation, in the newer console the **Memory density** control sits under **Virtualization → Settings → Cluster → General settings**
+(shown here switched off; do not change it outside the appendix):
+
+![Locate Memory density in the console settings; do not enable it during inspection](images/05-memory-settings.png)
 
 - [ ] Memory density already on **(reused, unchanged)** *or* enabled by the appendix, with
       the cluster owner's approval of its **cluster-wide** effect.

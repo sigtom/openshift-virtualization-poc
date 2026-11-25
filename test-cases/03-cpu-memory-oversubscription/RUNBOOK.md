@@ -27,7 +27,9 @@ sheet**; the pictures are not results for your environment.
 4. Open the VM’s **Metrics** tab in another browser tab. Keep the administrator’s
    host CPU, memory and swap graphs open too, filtered to the test node.
 
-![Choose Serial console from the console dropdown](images/00-serial-console.png)
+   ![Choose Serial console from the console dropdown](images/00-serial-console.png)
+
+   ![VM Metrics: keep CPU and memory graphs open](images/01-vm-metrics.png)
 
 **Expected:** the VMs are Running, their consoles work, and graphs show data.
 Keep existing VMs at their current size and location. Start optional new VMs
@@ -36,8 +38,6 @@ only when the administrator says they are ready.
 Paste **one command at a time** into the guest console, press **Enter**, and wait for
 its expected output before continuing. If the existing guest uses a different console,
 use the working console the administrator lists on your sheet.
-
-![VM Metrics: keep CPU and memory graphs open](images/01-vm-metrics.png)
 
 ## 2. Record a baseline
 
@@ -79,18 +79,19 @@ or latency summary is above the visible area.
    Repeat the **CPU** measured command from step 2 three times. Before each repeat,
    check the competitors still report `RUNNING`; otherwise stop and tell the administrator.
    Record its results and the same graph time windows.
+
+   ![Confirm the competitor reports RUNNING](images/03-competitor-running.png)
+
+   ![Compare the same CPU workload under competing load](images/04-loaded-result.png)
+
 4. In each competitor console run `poc-load stop`.
+
+   ![Confirm the competitor has stopped](images/06-competitor-stopped.png)
 
 **Expected:** `Started cpu load` when starting and `Stopped helper-started
 processes` when stopping. The load also stops itself after 75 minutes. For each
 approved higher load level, repeat this step using the competitors on the sheet.
 The measured VM and its command stay unchanged.
-
-![Confirm the competitor reports RUNNING](images/03-competitor-running.png)
-
-![Compare the same CPU workload under competing load](images/04-loaded-result.png)
-
-![Confirm the competitor has stopped](images/06-competitor-stopped.png)
 
 ## 4. Add memory load
 
@@ -121,10 +122,11 @@ synthetic bandwidth test does not replace an application working-set test.
 1. Confirm every competitor reports `NOT running` after `poc-load status`.
 2. Wait five minutes, then repeat the CPU command **three times** with the same settings. If the memory phase was approved and run, also repeat the memory command **three times**, one run at a time. Otherwise leave memory **Blocked**.
 3. Record whether throughput and latency returned close to the baseline.
+
+   ![Reference CPU recovery summary after competing load stops](images/09-recovery-result.png)
+
 4. Leave existing VMs running. Give the sheet to the administrator for
    [cleanup and restoration](ADMIN-GUIDE.md#reset).
-
-![Reference CPU recovery summary after competing load stops](images/09-recovery-result.png)
 
 **Stop the load and contact the administrator** if you see `BLOCKED`, `FAILED`,
 `RUN FAILED`, a VM restart, a paused VM, or missing graphs. Keep the error and
