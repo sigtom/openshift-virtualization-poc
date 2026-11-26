@@ -119,9 +119,12 @@ filled host file, then click **Upload**. Open the **Hosts** tab.
 
 ![Native console upload of a BareMetalHost definition](images/02-upload-bmh.png)
 
-The host initially shows **Pending** because the file starts paused. Complete
-the saved-settings check and start discovery using the two commands in the
+The host initially shows **Pending** because the file starts paused. A new
+paused host can also show **Metal3 operator is not configured** until discovery
+starts. Complete the saved-settings check and start discovery using the two commands in the
 host-file preparation steps. Wait for the host's discovered hardware to appear.
+If the warning remains or registration does not start, ask the administrator to
+check CIM; do not upload the host again.
 If it boots an old operating system, stop and use the BMC's one-time **UEFI
 virtual optical/CD** boot selection; do not start an installation on that disk.
 

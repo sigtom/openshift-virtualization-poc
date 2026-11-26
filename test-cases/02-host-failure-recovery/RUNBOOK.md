@@ -78,11 +78,13 @@ oc get nodes -l host-recovery-lab.example.com/source=case02 -o name   # exactly 
 SOURCE, reuse it **unchanged** and skip creation (it then also needs
 **vxflexos / Block / RWX** storage so TARGET can attach it). Otherwise create the
 disposable VM: console **Virtualization → VirtualMachines**, select project
-**host-recovery-lab**, then use the **Create** dropdown **→ With YAML** (some
-versions say **From YAML**),
-paste [`manifests/03-recovery-vm.yaml`](manifests/03-recovery-vm.yaml) (project
+**host-recovery-lab**, then click the arrow beside **Create → With YAML** (some
+versions say **From YAML**). Click inside the editor, press **Ctrl+A** to select
+all the sample YAML, and paste the filled
+[`manifests/03-recovery-vm.yaml`](manifests/03-recovery-vm.yaml) (project
 **host-recovery-lab**, created from
-[`00-namespace.yaml`](manifests/00-namespace.yaml) if missing). It stays **Stopped**.
+[`00-namespace.yaml`](manifests/00-namespace.yaml) if missing). Click **Create**
+and wait for **Stopped**.
 
 ![recovery-vm on its Overview page with status Stopped (preparation view, not a test result)](images/01-new-vm-stopped.png)
 
