@@ -1,9 +1,9 @@
 # Test 02: VM restart after a source worker stops responding
 
-> **Status: recovery and cleanup verified on 4.22.** Automatic Redfish fencing,
-> a new VM instance on a healthy destination, source-node recovery and fixture
-> cleanup were exercised. The 4.21 procedure was documentation-reviewed;
-> **vxflexos / Block / RWX provisioning remains unverified**.
+> **Status: automatic recovery verified on 4.22.** Redfish fencing, a new VM
+> instance on a healthy destination, its guest login prompt and source-node
+> recovery were exercised. Cleanup was held for review. The 4.21 procedure was
+> documentation-reviewed; **vxflexos / Block / RWX provisioning remains unverified**.
 
 For VMware/vCenter teams comparing this with vSphere HA host-failure restart.
 

@@ -1,8 +1,9 @@
 # Runbook: add a spare physical worker with CIM
 
-> **Status: expansion verified on 4.22.** Registration, installation,
-> added Ready capacity, a Running check pod and check-workload cleanup were exercised.
-> The 4.21 procedure was documentation-reviewed; this remains manual expansion.
+> **Status: results verified with a 4.21 hub and 4.22 workload cluster.**
+> Registration, installation, added Ready capacity and a Running check pod were
+> exercised. Cleanup was held for review. A 4.21 workload cluster was not tested;
+> this remains manual expansion.
 
 **Goal:** use the existing Central Infrastructure Management (CIM) setup to add
 one spare physical server as a worker of a managed workload cluster, and show
@@ -234,6 +235,9 @@ registered, approved and assigned as worker, node Ready, worker count and
 capacity increased, and the check pod Running on it.
 
 ## D. Stop and clean up
+
+If the owner wants to review the retained test resources first, stop before
+step 1. Cleanup was held in the latest verification run.
 
 1. Delete the check workload (workload cluster):
    ~~~sh

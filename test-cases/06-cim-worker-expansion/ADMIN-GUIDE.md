@@ -1,8 +1,9 @@
 # Administrator guide: CIM worker expansion
 
-> **Status: expansion verified on 4.22.** Registration, installation,
-> added Ready capacity, a Running check pod and check-workload cleanup were exercised.
-> The 4.21 procedure was documentation-reviewed; this remains manual expansion.
+> **Status: results verified with a 4.21 hub and 4.22 workload cluster.**
+> Registration, installation, added Ready capacity and a Running check pod were
+> exercised. Cleanup was held for review. A 4.21 workload cluster was not tested;
+> this remains manual expansion.
 
 Reference for commands and safety detail; the step-by-step flow is the
 [runbook](RUNBOOK.md) and is not repeated here. This case is a **manual**
@@ -55,7 +56,8 @@ inventory with `spec.clusterRef` already set is not suitable for these steps.
    your SSH public key. Match the OpenShift version to the workload cluster.
 3. The example uses DHCP. For bonds, VLANs or static IPs, have the network
    administrator supply a host-specific NMStateConfig and label it to match the
-   template's selector. Existing network configuration stays unchanged.
+   template's selector. Include the storage network if the worker will run VMs.
+   Existing network configuration stays unchanged.
 4. Use **Quick create (+) → Import YAML**, choose the inventory project, paste
    the completed definition and click **Create**. Alternatively:
    ~~~sh

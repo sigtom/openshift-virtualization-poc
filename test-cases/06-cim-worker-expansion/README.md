@@ -1,8 +1,9 @@
 # Test 06: add a spare physical worker with CIM
 
-> **Status: expansion verified on 4.22.** Registration, installation,
-> added Ready capacity, a Running check pod and check-workload cleanup were exercised.
-> The 4.21 procedure was documentation-reviewed; this remains manual expansion.
+> **Status: results verified with a 4.21 hub and 4.22 workload cluster.**
+> Registration, installation, added Ready capacity and a Running check pod were
+> exercised. Cleanup was held for review. A 4.21 workload cluster was not tested;
+> this remains manual expansion.
 
 For teams used to adding ESXi hosts to a vSphere cluster. Using the existing
 Central Infrastructure Management (CIM) hub, you add one spare physical server

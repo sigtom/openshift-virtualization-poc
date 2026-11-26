@@ -1,9 +1,9 @@
 # Runbook: VM restart after a source worker stops responding
 
-> **Status: recovery and cleanup verified on 4.22.** Automatic Redfish fencing,
-> a new VM instance on a healthy destination, source-node recovery and fixture
-> cleanup were exercised. The 4.21 procedure was documentation-reviewed;
-> **vxflexos / Block / RWX provisioning remains unverified**.
+> **Status: automatic recovery verified on 4.22.** Redfish fencing, a new VM
+> instance on a healthy destination, its guest login prompt and source-node
+> recovery were exercised. Cleanup was held for review. The 4.21 procedure was
+> documentation-reviewed; **vxflexos / Block / RWX provisioning remains unverified**.
 
 **Goal:** see a running VM interrupted and restarted on a separate healthy host
 (the destination) after the cluster automatically power-cycles the one approved worker
@@ -179,6 +179,8 @@ oc get nodehealthcheck case02-host-recovery -o jsonpath='{.status.phase} observe
 minute). If not, pause again ([abort and pause](ADMIN-GUIDE.md#abort-and-pause))
 and **do not run the fault**.
 
+![VM Running on the source before the fault; environment identifiers redacted](images/06-source-vm-running.png)
+
 ### C4. Start the evidence capture
 
 > **HANDOFF → administrator.** The remediation object is short-lived. Start the
@@ -214,11 +216,22 @@ and **Virtualization → VirtualMachines** open. Expect, with no promised timing
 If the agreed abort rule is reached first, follow [abort and pause](ADMIN-GUIDE.md#abort-and-pause).
 Manual recovery is a **Fail**.
 
-![VM Running on the source before the fault; environment identifiers redacted](images/06-source-vm-running.png)
+![Health check is remediating the one selected source](images/13-healthcheck-remediating.png)
 
-![Automatically generated remediation shows successful fencing](images/07-fence-succeeded.png)
+If the temporary remediation has already disappeared, open **Home → Events**,
+select project **openshift-workload-availability**, and filter by **Fence agent**.
+Keep the administrator's captured remediation conditions for the timing comparison;
+the event alone does not prove the restart order. Events expire, so save them promptly.
+
+![Retained event reports successful fencing after the temporary remediation object was removed automatically](images/07-fence-succeeded.png)
 
 ![Replacement VM Running; compare the actual destination privately](images/08-recovered-vm-running.png)
+
+![Recovered guest reaches its login prompt](images/10-recovered-guest-console.png)
+
+![Source returns Ready and stays Scheduling disabled](images/11-source-recovered.png)
+
+![Health check returns to one observed and one healthy node](images/12-healthcheck-healthy.png)
 
 ### C7. Record "after" evidence and judge two results
 
@@ -236,6 +249,11 @@ Manual recovery is a **Fail**.
 - **VM restart:** every row above passes. Missing fence evidence is **Blocked**, not Pass.
 
 ## D. Stop and clean up
+
+**Review first:** cleanup was held in the latest verification run. Complete
+steps 1–3 to finish evidence capture and pause the policy safely. Keep SOURCE
+cordoned and retain the VM, disks and other test resources. Continue with
+steps 4–6 only when the owner is ready for cleanup.
 
 1. Wait until SOURCE is **Ready**, the remediation object is **gone** and the
    remediation taints are cleared. Never delete the object, VMI, node or finalizer by hand.
@@ -257,5 +275,3 @@ Manual recovery is a **Fail**.
    **Actions → Delete**. Keep its test DataVolume selected in the confirmation
    and click **Delete**. A reused VM and its disks stay intact.
 6. Fill in the [results sheet](RESULTS-TEMPLATE.md).
-
-![Disposable test VM removed from the selected project](images/09-test-vm-removed.png)

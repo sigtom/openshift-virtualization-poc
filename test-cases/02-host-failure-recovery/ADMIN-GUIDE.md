@@ -1,9 +1,9 @@
 # Administrator guide: source-only host recovery
 
-> **Status: recovery and cleanup verified on 4.22.** Automatic Redfish fencing,
-> a new VM instance on a healthy destination, source-node recovery and fixture
-> cleanup were exercised. The 4.21 procedure was documentation-reviewed;
-> **vxflexos / Block / RWX provisioning remains unverified**.
+> **Status: automatic recovery verified on 4.22.** Redfish fencing, a new VM
+> instance on a healthy destination, its guest login prompt and source-node
+> recovery were exercised. Cleanup was held for review. The 4.21 procedure was
+> documentation-reviewed; **vxflexos / Block / RWX provisioning remains unverified**.
 
 Reference for commands and safety detail. The step-by-step flow is the
 [runbook](RUNBOOK.md); this guide does not repeat it. This case **really
@@ -297,7 +297,11 @@ too early can leave the object and taints in place.
 You cordon SOURCE in the runbook, so you own that cordon. Uncordon when SOURCE is
 healthy, and only if no one else has cordoned it since.
 
-![Fence-success conditions captured during the rehearsal](images/07-fence-succeeded.png)
+If the temporary remediation object is already gone, use **Home → Events**,
+select **openshift-workload-availability**, and filter **Fence agent**. Save the
+event promptly. Use the native watch capture for fence-before-restart timestamps.
+
+![Retained event reports successful fencing; keep the captured remediation conditions for timing evidence](images/07-fence-succeeded.png)
 
 ## Cleanup
 
