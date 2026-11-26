@@ -26,9 +26,9 @@ export HOST='REPLACE_SPARE_HOST_NAME'
   initialise the hub.
 - A host-inventory InfraEnv, reused **unchanged**: do not edit its pull secret,
   SSH key, NTP, proxy or labels.
-- A spare approved physical host with a **separate install disk** and BMC access.
-  The install disk contents will be overwritten; every other disk must be a
-  data disk that is not selected.
+- A spare approved physical host with BMC access and **only disposable disks
+  connected**. Disconnect disks or unpresent SAN LUNs containing data or another
+  OS before discovery. The install disk will be overwritten.
 - A BMC address with the vendor-appropriate URI. Dell iDRAC uses
   `idrac-virtualmedia://`, not the generic `redfish-virtualmedia://`.
 - BMC credentials stay private (see below). No password goes in this repository.
@@ -91,11 +91,13 @@ Certificate verification stays enabled. A "disable certificate verification"
 choice is a host-specific exception that needs written owner approval; do not
 make it the default.
 
-### Host with disks to preserve
+### Prepare the paused host file
 
-The BMC form does not offer a disk-cleaning setting. Use this path if other
-disks must stay intact. The runbook uses it for all test hosts so the settings
-can be reviewed before discovery starts:
+The BMC form does not offer a disk-cleaning setting. The runbook uses a paused
+host file so settings can be reviewed before discovery. BMH cleaning and
+Assisted Installer disk preparation are separate: **disabled cleaning does not
+guarantee preservation of other disks or their boot records**. Use only
+disposable connected disks; do not rely on the Format checkbox for protection.
 
 1. Create the private BMC Secret above in the inventory namespace.
 2. Fill [`02-baremetalhost-paused.yaml`](manifests/02-baremetalhost-paused.yaml).
@@ -112,8 +114,8 @@ can be reviewed before discovery starts:
    oc annotate baremetalhost "$HOST" -n "$INV_NS" baremetalhost.metal3.io/paused-
    ~~~
 5. Return to the runbook's discovered-host review. Confirm the install disk
-   before approving or assigning the host. Selecting an install disk does not
-   protect other disks from automated cleaning; cleaning stays disabled here.
+   before approving or assigning the host. Keep BMH cleaning disabled, and
+   confirm again that every connected disk is disposable.
 
 For reference, **Add hosts → With BMC form** shows the fields below. It also
 offers NMState and MAC-to-interface mapping for static or bonded networks.

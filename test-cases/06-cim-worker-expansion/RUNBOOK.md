@@ -35,8 +35,9 @@ This case starts from an **existing** environment; it does not set one up:
   It must be unassigned to a cluster (`clusterRef` absent) and must not
   automatically approve hosts. If the existing installation inventory is
   already assigned, create a separate inventory for this test; leave it intact.
-- One **spare approved physical server** with a **separate install disk** (not
-  a data disk) and BMC access, whose contents the owner agrees can be overwritten.
+- One **spare approved physical server** with BMC access. Every connected disk
+  must be disposable. Disconnect disks and unpresent SAN LUNs containing data
+  or another OS before discovery; selecting an install disk is not protection.
 - Owner approval to add, use and retain the spare worker.
 
 **A1. Choose and record names.** Write on the results sheet: inventory name,
@@ -72,7 +73,7 @@ oc get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.allocatable.cpu,M
 </details>
 
 **A4. Prepare the host file.** Follow the
-[host-file preparation steps](ADMIN-GUIDE.md#host-with-disks-to-preserve) to
+[host-file preparation steps](ADMIN-GUIDE.md#prepare-the-paused-host-file) to
 create a private BMC Secret and fill the paused BareMetalHost template. Keep
 the filled file outside the repository. The file references the Secret by name.
 
@@ -87,7 +88,7 @@ Run once before adding the host. Any **no** means **stop**.
 | 2 | The workload cluster is **Ready** (hub) | **Fleet Management → Infrastructure → Clusters** |
 | 3 | The spare's BMC is powered and reachable; the host is not already in the inventory | Host inventory **Hosts** tab; server may stay off |
 | 4 | The BMC address uses the vendor-appropriate form (A2) | Your notes |
-| 5 | Owner approval and the intended install disk are recorded | Results sheet |
+| 5 | Owner approval and install disk recorded; all connected disks disposable | Results sheet |
 | 6 | Before-count of workers and capacity is recorded (A3) | Results sheet |
 
 <details>
@@ -151,7 +152,9 @@ approval is offered, review the hardware first, select the host and choose
 4. Expand the host's **Details** arrow. Under **Disks**, confirm the approved OS
    disk has role **Installation disk**. To choose another disk, open that disk's
    **Role** button (**None**) and select **Installation disk**. Check its serial
-   and size. Every disk you must preserve stays **None**, with **Format?** unchecked.
+   and size. Other disks stay **None**. The **Format?** column can be disabled;
+   an unchecked box is not proof that another disk will remain untouched.
+   **Stop if any connected disk contains data or an OS to preserve.**
 5. Only when the host, cluster, role and install disk are correct, click
    **Submit**. This assigns the host and starts installation.
 

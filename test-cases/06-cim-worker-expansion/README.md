@@ -31,7 +31,8 @@ separate outcomes there.
 - ACM/MCE with CIM configured, and a managed workload cluster.
 - An unassigned host-inventory InfraEnv, reused unchanged when suitable.
   The runbook includes an optional separate-inventory procedure.
-- A spare approved server with a separate install disk and BMC access.
+- A spare approved server with BMC access and only disposable disks connected.
+  Disconnect disks or unpresent SAN LUNs with data or another OS to preserve.
 
 Without spare hardware, review the procedure and record **Not run**. Removing
 and re-adding an existing node does not demonstrate extra cluster capacity.
@@ -53,5 +54,7 @@ entered privately.
 ## Boundaries
 
 - Expansion was rehearsed on 4.22; target-cluster execution is still required.
+- Disk preservation was not established: an unchecked Format box and disabled
+  BMH cleaning do not guarantee other boot records remain untouched.
 - Keep credentials, environment addresses and completed results private. Guide images are redacted.
 - Dell servers use the `idrac-virtualmedia` BMC address form, not the generic Redfish one.

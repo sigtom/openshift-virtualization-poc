@@ -23,7 +23,7 @@ Owner approval to add, use and retain: ______
 | --- | --- |
 | Inventory healthy; workload cluster Ready | |
 | Spare host reachable by BMC; vendor-appropriate address form | |
-| Owner approval and install disk recorded | |
+| Owner approval and install disk recorded; all connected disks disposable | |
 | Before-counts recorded | |
 
 ## Observations
