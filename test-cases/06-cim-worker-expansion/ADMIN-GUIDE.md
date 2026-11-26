@@ -100,28 +100,44 @@ make it the default.
 ### Prepare the paused host file
 
 The BMC form does not offer a disk-cleaning setting. The runbook uses a paused
-host file so settings can be reviewed before discovery. BMH cleaning and
+host file so settings can be reviewed before discovery. The file is only
+prepared here; its single upload is in runbook C1. BMH cleaning and
 Assisted Installer disk preparation are separate: **disabled cleaning does not
 guarantee preservation of other disks or their boot records**. Use only
 disposable connected disks; do not rely on the Format checkbox for protection.
 
+Preparation (runbook A4) has two steps and **stops there**. Nothing is uploaded
+and discovery is not started during preparation.
+
 1. Create the private BMC Secret above in the inventory namespace.
-2. Fill [`02-baremetalhost-paused.yaml`](manifests/02-baremetalhost-paused.yaml).
-   The BMC URI must match the vendor. The template starts paused with cleaning
-   disabled; this does not yet select the operating system's install disk.
-3. On the inventory page choose **Add hosts → By uploading a YAML → Open file**,
-   select the filled template, then **Upload**. The existing Secret is referenced
-   by name; do not include its contents in the uploaded file.
-4. Confirm the saved settings, then start discovery:
+2. Fill [`02-baremetalhost-paused.yaml`](manifests/02-baremetalhost-paused.yaml)
+   and keep it outside the repository. The BMC URI must match the vendor. The
+   template starts paused with cleaning disabled and TLS verification enabled;
+   this does not yet select the operating system's install disk. It references
+   the Secret by name; do not include the Secret's contents.
+
+Stop here. Continue with the readiness check (runbook B). Upload happens later,
+once, in runbook C1.
+
+### Upload the host and start discovery (runbook C1, once)
+
+Do this only after the readiness check passes, and only once. If the host already
+exists, do not upload again; ask the administrator to check CIM.
+
+1. On the inventory page choose **Add hosts → By uploading a YAML → Open file**,
+   select the filled paused file, then **Upload**.
+2. **Immediately after the upload**, confirm the saved settings, then start
+   discovery. Run this block once:
    ~~~sh
    oc get baremetalhost "$HOST" -n "$INV_NS" -o jsonpath='{.spec.automatedCleaningMode}{" "}{.metadata.annotations.baremetalhost\.metal3\.io/paused}{"\n"}'
-   # Expected: disabled true
+   # Expected: disabled true   (if not, stop; do not start discovery)
    oc patch baremetalhost "$HOST" -n "$INV_NS" --type=merge -p '{"spec":{"online":true}}'
    oc annotate baremetalhost "$HOST" -n "$INV_NS" baremetalhost.metal3.io/paused-
    ~~~
-5. Return to the runbook's discovered-host review. Confirm the install disk
+3. Return to the runbook's discovered-host review (C2). Confirm the install disk
    before approving or assigning the host. Keep BMH cleaning disabled, and
-   confirm again that every connected disk is disposable.
+   confirm again that every connected disk is disposable. Do not assign the
+   host until that review is done (runbook C3).
 
 For reference, **Add hosts → With BMC form** shows the fields below. It also
 offers NMState and MAC-to-interface mapping for static or bonded networks.

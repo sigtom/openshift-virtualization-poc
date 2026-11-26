@@ -75,10 +75,12 @@ oc get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.allocatable.cpu,M
 
 </details>
 
-**A4. Prepare the host file.** Follow the
+**A4. Prepare the host file (no upload yet).** Follow the
 [host-file preparation steps](ADMIN-GUIDE.md#prepare-the-paused-host-file) to
 create a private BMC Secret and fill the paused BareMetalHost template. Keep
 the filled file outside the repository. The file references the Secret by name.
+**Stop at the filled file.** Do not upload it or start discovery now; both
+happen once, in C1, after the readiness check.
 
 ## B. Readiness check (one check, all must be yes)
 
@@ -112,9 +114,9 @@ oc get managedcluster
 
 ### C1. Register the host
 
-Use the host file prepared in A4. Cleaning starts disabled and certificate
-verification stays enabled. The file contains the Secret's name, not its
-username or password.
+Do this once, only after section B passed. Use the host file prepared in A4.
+Cleaning starts disabled and certificate verification stays enabled. The file
+contains the Secret's name, not its username or password.
 
 On the **hub**: **Fleet Management → Infrastructure → Host inventory →** select
 your inventory **→ Add hosts → By uploading a YAML → Open file**. Choose the
@@ -124,10 +126,13 @@ filled host file, then click **Upload**. Open the **Hosts** tab.
 
 The host initially shows **Pending** because the file starts paused. A new
 paused host can also show **Metal3 operator is not configured** until discovery
-starts. Complete the saved-settings check and start discovery using the two commands in the
-host-file preparation steps. Wait for the host's discovered hardware to appear.
+starts. **Right after this one upload**, run the saved-settings check and start
+discovery once, with the commands in
+[upload and start discovery](ADMIN-GUIDE.md#upload-the-host-and-start-discovery-runbook-c1-once)
+(step 2 there; the upload step is the one you just did, so do not repeat it).
+Then wait for the host's discovered hardware to appear.
 If the warning remains or registration does not start, ask the administrator to
-check CIM; do not upload the host again.
+check CIM; do not upload the host again or rerun the start commands.
 If it boots an old operating system, stop and use the BMC's one-time **UEFI
 virtual optical/CD** boot selection; do not start an installation on that disk.
 

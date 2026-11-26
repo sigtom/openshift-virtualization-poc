@@ -12,7 +12,12 @@ power-cycles a server**; you own approval, the abort rule and escalation.
 ## Prepare
 
 ~~~sh
-export OPNS=openshift-workload-availability NS=host-recovery-lab
+export OPNS=openshift-workload-availability   # operator project
+# VM project and name: demo defaults for the new example. For a reused VM,
+# set both to that VM's own project and name.
+export VMNS=host-recovery-lab VM=recovery-vm
+# Cleanup ownership: set to true only after you create the example VM.
+export CREATED_VM=false
 export SOURCE='REPLACE_SOURCE_NODE' TARGET='REPLACE_TARGET_NODE'
 export SOURCE_IP="$(oc get node "$SOURCE" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
 ~~~
@@ -39,6 +44,8 @@ the administrator's known fingerprint before accepting it.
   for SOURCE only. The Secret holds `--username` and `--password`; those keys
   are not repeated in `sharedparameters`.
 - Client VM storage: **vxflexos, Block, ReadWriteMany**.
+- The selected VM (`VMNS`/`VM`) restarts automatically: run strategy **Always** or
+  **RerunOnFailure**. **Manual** does not restart, so it is ineligible.
 
 ### Artifact files
 
@@ -46,7 +53,7 @@ Apply only the file a step names; never the folder.
 
 | Artifact | Use |
 | --- | --- |
-| `manifests/00-namespace.yaml` | Only if `NS` does not exist |
+| `manifests/00-namespace.yaml` | Only for the new example, if its project does not exist |
 | `manifests/00a-subscription-fence-agents-remediation.yaml` | Only if FAR is missing |
 | `manifests/00b-subscription-node-health-check.yaml` | Only if NHC is missing |
 | `manifests/01-far-template.yaml` | Fill SOURCE node, BMC host, Systems id |
@@ -123,7 +130,34 @@ fence affects everything on it.
 oc get pods -A --field-selector spec.nodeName="$SOURCE" -o wide
 ~~~
 
+### Selected VM checks
+
+Run before the fault, with `VMNS` and `VM` set. They only read the selected VM;
+other VMs in the project are not inspected. For a reused VM, a failed check
+means choose another VM or the disposable example. Never patch the VM.
+
+~~~sh
+oc get vm "$VM" -n "$VMNS" -o jsonpath='{.spec.runStrategy}{" running="}{.spec.running}{"\n"}'
+oc get vmi "$VM" -n "$VMNS" -o jsonpath='{.status.nodeName}{"\n"}'
+oc get vm "$VM" -n "$VMNS" -o jsonpath='{range .spec.template.spec.volumes[*]}{.name}{" pvc="}{.persistentVolumeClaim.claimName}{" dv="}{.dataVolume.name}{"\n"}{end}'
+oc get pvc -n "$VMNS" REPLACE_CLAIM_NAME -o custom-columns=NAME:.metadata.name,CLASS:.spec.storageClassName,MODE:.spec.volumeMode,ACCESS:.spec.accessModes
+~~~
+
+Run the last command once per claim name listed (a DataVolume uses a claim of
+the same name; the cloud-init disk has no claim and is allowed). Pass when: the
+node is SOURCE; every claim is `vxflexos`,
+`Block`, `ReadWriteMany`; and the run strategy is `Always` or `RerunOnFailure`
+(`Manual` fails; an empty strategy with only `running` is not assumed eligible).
+The new example is the one exception to the node and strategy rows **before** its
+Start: it is Halted with no VMI. Start it from the console, then run the checks;
+the strategy should now read `Always`.
+
 ### Private directory and CA
+
+Do the credential steps in this order, in **one terminal**: Private directory and
+CA, BMC mapping, Fencing Secret, BMC certificate trust. `PRIV` exists only in the
+shell that ran the first step. If a later block says the private folder is
+missing, return here; it has not touched any credential.
 
 Outside the checkout and not shared. Copy the BMC CA bundle (PEM) there.
 
@@ -134,15 +168,21 @@ cp /PRIVATE/PATH/TO/APPROVED-BMC-CA.pem "$PRIV/bmc-ca.pem"
 
 ### BMC mapping
 
-Read-only `GET`s; nothing is reset. `curl` prompts for the password. Never use `-k`.
+Needs the previous step. Read-only `GET`s; nothing is reset. `curl` prompts for
+the password. Never use `-k`. Paste the whole block; it runs nothing unless the
+private folder and CA are present.
 
 ~~~sh
-read -r -p 'BMC username: ' BMC_USER
-curl --user "$BMC_USER" --cacert "$PRIV/bmc-ca.pem" --fail --silent --show-error \
-  https://REPLACE_SOURCE_BMC_HOST/redfish/v1/Systems
-curl --user "$BMC_USER" --cacert "$PRIV/bmc-ca.pem" --fail --silent --show-error \
-  https://REPLACE_SOURCE_BMC_HOST/redfish/v1/Systems/REPLACE_SOURCE_SYSTEM_ID | jq '{UUID, SerialNumber, PowerState, HostName}'
-oc get node "$SOURCE" -o jsonpath='{.status.nodeInfo.systemUUID}{"\n"}'
+if [ -n "${PRIV:-}" ] && [ -d "$PRIV" ] && [ -O "$PRIV" ] && [ -s "$PRIV/bmc-ca.pem" ]; then
+  read -r -p 'BMC username: ' BMC_USER
+  curl --user "$BMC_USER" --cacert "$PRIV/bmc-ca.pem" --fail --silent --show-error \
+    https://REPLACE_SOURCE_BMC_HOST/redfish/v1/Systems
+  curl --user "$BMC_USER" --cacert "$PRIV/bmc-ca.pem" --fail --silent --show-error \
+    https://REPLACE_SOURCE_BMC_HOST/redfish/v1/Systems/REPLACE_SOURCE_SYSTEM_ID | jq '{UUID, SerialNumber, PowerState, HostName}'
+  oc get node "$SOURCE" -o jsonpath='{.status.nodeInfo.systemUUID}{"\n"}'
+else
+  echo 'Stop: no private folder or CA. Run "Private directory and CA" first.' >&2
+fi
 ~~~
 
 **Critical gate:** the Redfish `UUID` (and a serial or asset tag you trust)
@@ -155,13 +195,24 @@ matched, confirm by a second independent method or **stop**.
 SOURCE only; never create or reference a TARGET credential. Values never go in
 the repository or argv. The name must not already exist.
 
+Needs [Private directory and CA](#private-directory-and-ca) first. Paste the
+whole block at once. If the private folder (`PRIV`) is unset, missing, not yours,
+not owner-only (mode 700) or has no CA, the block prints one line and reads or
+writes nothing. Otherwise every step is chained, so a failure stops the rest.
+
 ~~~sh
-read -r -p 'BMC username: ' u; printf '%s' "$u" > "$PRIV/source.user"
-read -r -s -p 'BMC password: ' p; printf '%s' "$p" > "$PRIV/source.pass"; echo
-unset u p
-oc create secret generic case02-bmc-source -n "$OPNS" \
-  --from-file=--username="$PRIV/source.user" --from-file=--password="$PRIV/source.pass"
-oc label secret case02-bmc-source -n "$OPNS" host-recovery-lab.example.com/case=02
+if [ -n "${PRIV:-}" ] && [ -d "$PRIV" ] && [ -O "$PRIV" ] \
+   && [ "$(stat -c %a "$PRIV")" = 700 ] && [ -s "$PRIV/bmc-ca.pem" ]; then
+  umask 077
+  read -r -p 'BMC username: ' u && printf '%s' "$u" > "$PRIV/source.user" &&
+  read -r -s -p 'BMC password: ' p && printf '%s' "$p" > "$PRIV/source.pass" && echo &&
+  oc create secret generic case02-bmc-source -n "$OPNS" \
+    --from-file=--username="$PRIV/source.user" --from-file=--password="$PRIV/source.pass" &&
+  oc label secret case02-bmc-source -n "$OPNS" host-recovery-lab.example.com/case=02
+  unset u p
+else
+  echo 'Stop: no valid private folder. Run "Private directory and CA" first.' >&2
+fi
 ~~~
 
 Use a least-privilege BMC account allowed to read power state and reset. Keep
@@ -183,9 +234,13 @@ POD=$(oc get pods -n "$OPNS" -o json | jq -r --arg source "$SOURCE" '
   | first | .metadata.name // empty')
 oc get pod "$POD" -n "$OPNS" -o wide
 oc exec -n "$OPNS" "$POD" -c manager -- fence_redfish -o metadata | grep -Ei 'systems-uri|ssl|action'
-printf 'ip=%s\nusername=%s\npassword=%s\nsystems-uri=/redfish/v1/Systems/%s\naction=status\n' \
-  REPLACE_SOURCE_BMC_HOST "$(cat "$PRIV/source.user")" "$(cat "$PRIV/source.pass")" REPLACE_SOURCE_SYSTEM_ID \
-  | oc exec -i -n "$OPNS" "$POD" -c manager -- fence_redfish
+if [ -n "${PRIV:-}" ] && [ -s "$PRIV/source.user" ] && [ -s "$PRIV/source.pass" ]; then
+  printf 'ip=%s\nusername=%s\npassword=%s\nsystems-uri=/redfish/v1/Systems/%s\naction=status\n' \
+    REPLACE_SOURCE_BMC_HOST "$(cat "$PRIV/source.user")" "$(cat "$PRIV/source.pass")" REPLACE_SOURCE_SYSTEM_ID \
+    | oc exec -i -n "$OPNS" "$POD" -c manager -- fence_redfish
+else
+  echo 'Stop: Fencing Secret step not done; no credential files.' >&2
+fi
 ~~~
 
 Expected `Status: ON`. An empty `$POD` means **stop**. A TLS error means the
@@ -231,8 +286,8 @@ directory outside the checkout.
 mkdir -p "$HOME/.local/state" && EVID=$(mktemp -d "$HOME/.local/state/case02-evidence.XXXXXX") && echo "$EVID"
 # terminal A (export OPNS EVID first)
 oc get fenceagentsremediation -n "$OPNS" --watch --output-watch-events -o json > "$EVID/far.json"
-# terminal B (export NS EVID first)
-oc get vmi -n "$NS" --watch --output-watch-events -o json > "$EVID/vmi.json"
+# terminal B (export VMNS VM EVID first; watches only the selected VM)
+oc get vmi -n "$VMNS" --field-selector metadata.name="$VM" --watch --output-watch-events -o json > "$EVID/vmi.json"
 # terminal C
 oc get nodes -l host-recovery-lab.example.com/source=case02 --watch --output-watch-events -o json > "$EVID/nodes.json"
 ~~~
@@ -312,7 +367,7 @@ created and recorded.
 | --- | --- |
 | NodeHealthCheck `case02-host-recovery`, FAR template `case02-far-redfish-reboot` | Delete once no remediation object exists |
 | Secret `case02-bmc-source` | Delete the test-created Secret only |
-| VM `recovery-vm` | Delete only if you created it; a reused VM stays unchanged |
+| Selected VM (`VM` in `VMNS`) | Delete only if you created it as the example; a reused VM, its disks and project stay unchanged |
 | Node label `host-recovery-lab.example.com/source` | Remove from SOURCE |
 | Cordon on SOURCE | Uncordon when healthy, only if you own it |
 | Evidence and `$PRIV` | Keep evidence private; securely remove `$PRIV` |
@@ -322,7 +377,7 @@ created and recorded.
 oc delete nodehealthcheck case02-host-recovery
 oc delete fenceagentsremediationtemplate case02-far-redfish-reboot -n "$OPNS"
 oc delete secret case02-bmc-source -n "$OPNS"
-oc delete vm recovery-vm -n "$NS"        # only if created for this test
+if [ "${CREATED_VM:-false}" = true ]; then oc delete vm "$VM" -n "$VMNS"; fi   # skipped for a reused VM
 oc label node "$SOURCE" host-recovery-lab.example.com/source-
 ~~~
 

@@ -28,7 +28,13 @@ detail and safety reasoning are in the [administrator guide](ADMIN-GUIDE.md).
 
 ~~~sh
 cd test-cases/02-host-failure-recovery
-export NS=host-recovery-lab
+# The VM's project and name. These defaults are for the new example VM.
+# Reusing a VM? Replace both with that VM's own project and name.
+export VMNS=host-recovery-lab
+export VM=recovery-vm
+# Cleanup ownership: stays false unless you create the example VM in A3.
+export CREATED_VM=false
+# Operator project (a different thing from the VM's project)
 export OPNS=openshift-workload-availability
 export SOURCE='REPLACE_SOURCE_NODE'
 export TARGET='REPLACE_TARGET_NODE'
@@ -74,27 +80,50 @@ oc get nodes -l host-recovery-lab.example.com/source=case02 -o name   # exactly 
 
 </details>
 
-**A3. Choose the VM.** If an existing approved VM already fits and is running on
-SOURCE, reuse it **unchanged** and skip creation (it then also needs
-**vxflexos / Block / RWX** storage so TARGET can attach it). Otherwise create the
-disposable VM: console **Virtualization → VirtualMachines**, select project
+**A3. Choose the VM.** Set `VMNS` (the VM's project) and `VM` (its name) in the
+CLI block above. The defaults are the new example. Every later check, watch and
+cleanup uses only that one VM; the operator project `OPNS` is separate.
+
+*Reuse an existing approved VM only if all of these are already true, and leave
+it unchanged:* it runs on SOURCE; every persistent, PVC-backed VM disk is
+**vxflexos / Block / ReadWriteMany** (console: **VM → Configuration → Storage**)
+so another host can attach it (the small cloud-init disk is not a PVC and is
+allowed); and its
+run strategy restarts it automatically (**Always** or **RerunOnFailure**).
+**Manual** never restarts it, so it is not eligible. If the VM only shows the older
+`running` setting, do not assume it qualifies; pick another VM or the example.
+If any item fails, choose a different VM or use the disposable example. Do not
+edit an otherwise suitable VM to make it fit. Commands:
+[selected VM checks](ADMIN-GUIDE.md#selected-vm-checks).
+
+*Otherwise create the disposable example.* If you set `VMNS`/`VM` for an
+existing VM and it failed, first reset them to the example's names
+(`export VMNS=host-recovery-lab VM=recovery-vm`) and keep `CREATED_VM=false`. Then
+use the console **Virtualization → VirtualMachines**, select project
 **host-recovery-lab**, then click the arrow beside **Create → With YAML** (some
 versions say **From YAML**). Click inside the editor, press **Ctrl+A** to select
 all the sample YAML, and paste the filled
 [`manifests/03-recovery-vm.yaml`](manifests/03-recovery-vm.yaml) (project
 **host-recovery-lab**, created from
 [`00-namespace.yaml`](manifests/00-namespace.yaml) if missing). Click **Create**
-and wait for **Stopped**.
+and wait for **Stopped**. Only after this creation succeeds, record ownership:
+`export CREATED_VM=true`. Never set it for a reused VM.
 
 ![recovery-vm on its Overview page with status Stopped (preparation view, not a test result)](images/01-new-vm-stopped.png)
 
-Start it (**Actions → Control → Start**) and wait for **Running**. A reused VM must
-already be Running.
+The example is intentionally stopped (run strategy **Halted**). Start it
+(**Actions → Control → Start**), which sets the run strategy to **Always**, and wait
+for **Running**. A reused VM must already be Running with an eligible strategy.
 
 **A4. Create the BMC Secret (SOURCE only).** Private values, never in the
-repository. Steps: [fencing Secret](ADMIN-GUIDE.md#fencing-secret). Then confirm
-the node-to-BMC mapping and TLS trust: [BMC mapping](ADMIN-GUIDE.md#bmc-mapping)
-and [BMC certificate trust](ADMIN-GUIDE.md#bmc-certificate-trust).
+repository. Follow these four steps **in this order**, in one terminal:
+
+1. [Private directory and CA](ADMIN-GUIDE.md#private-directory-and-ca): creates
+   the private folder (`PRIV`) and copies in the BMC CA. Start here.
+2. [BMC mapping](ADMIN-GUIDE.md#bmc-mapping): confirm the BMC is SOURCE's.
+3. [Fencing Secret](ADMIN-GUIDE.md#fencing-secret): needs step 1. It does nothing
+   and says why if the private folder is missing.
+4. [BMC certificate trust](ADMIN-GUIDE.md#bmc-certificate-trust): needs step 3.
 
 **A5. Create the FAR template and the paused health check.** Fill the
 `REPLACE_*` values, then create
@@ -118,7 +147,7 @@ Run this once, with the health check still paused. Any **no** means **stop**.
 | 1 | Exactly **one** node matches the health check selector, and it is SOURCE | **Compute → Nodes**, filter by label `host-recovery-lab.example.com/source=case02` |
 | 2 | SOURCE and TARGET are **Ready**; every other node is Ready | **Compute → Nodes** |
 | 3 | TARGET has no label and is not in the FAR template | Node labels; template YAML |
-| 4 | The VM is **Running on SOURCE** | VM **Overview** |
+| 4 | The selected VM is **Running on SOURCE** and its run strategy is **Always** or **RerunOnFailure** | VM **Overview**; **YAML** `runStrategy` |
 | 5 | NHC and FAR controller pods are Ready on nodes **other than SOURCE** | **Workloads → Pods**, project `openshift-workload-availability`, Node column |
 | 6 | Health check shows `pauseRequests`; its Disabled condition is False | NodeHealthCheck YAML |
 | 7 | `kubelet` on SOURCE is enabled and active | CLI below |
@@ -130,7 +159,8 @@ Run this once, with the health check still paused. Any **no** means **stop**.
 oc get nodes -l host-recovery-lab.example.com/source=case02,node-role.kubernetes.io/worker,'!node-role.kubernetes.io/control-plane','!node-role.kubernetes.io/master'
 oc get nodes
 oc get node "$TARGET" --show-labels | grep -c 'host-recovery-lab.example.com/source' || true
-oc get vmi -n "$NS" -o wide
+oc get vmi "$VM" -n "$VMNS" -o wide
+oc get vm "$VM" -n "$VMNS" -o jsonpath='{.spec.runStrategy}{"\n"}'
 oc get pods -n "$OPNS" -o wide
 oc get nodehealthcheck case02-host-recovery -o jsonpath='{.spec.pauseRequests} {.status.conditions}{"\n"}'
 ssh core@"$SOURCE_IP" 'systemctl is-enabled kubelet; systemctl is-active kubelet'
@@ -138,8 +168,8 @@ ssh core@"$SOURCE_IP" 'systemctl is-enabled kubelet; systemctl is-active kubelet
 
 </details>
 
-Expected: one node listed, all nodes Ready, the TARGET count line is `0`, VMI
-on SOURCE, controllers off SOURCE, pause present, `enabled` and `active`.
+Expected: one node listed, all nodes Ready, the TARGET count line is `0`, the
+selected VMI on SOURCE, `Always` or `RerunOnFailure`, controllers off SOURCE, pause present, `enabled` and `active`.
 
 ## C. Test and results
 
@@ -151,7 +181,7 @@ the guest works: **VM → Console** shows a login prompt or desktop (or
 `date > ~/case02-note.txt`.
 
 ~~~sh
-oc get vmi recovery-vm -n "$NS" -o jsonpath='{.status.nodeName} {.metadata.uid}{"\n"}'
+oc get vmi "$VM" -n "$VMNS" -o jsonpath='{.status.nodeName} {.metadata.uid}{"\n"}'
 oc get node "$SOURCE" -o jsonpath='{.status.nodeInfo.bootID}{"\n"}'
 ~~~
 
@@ -241,7 +271,7 @@ the event alone does not prove the restart order. Events expire, so save them pr
 | VMI UID | **Different** from before |
 | VM state | Running, guest console works |
 | Optional note | `cat ~/case02-note.txt` still shows the text |
-| Duplicate | Only one VMI at any time |
+| Duplicate | Only one VMI for the selected VM at any time |
 | Fence | Captured remediation shows fence success; BMC event log shows the power-cycle |
 | SOURCE boot ID | **Different** from before |
 
@@ -271,7 +301,8 @@ steps 4–6 only when the owner is ready for cleanup.
    schedulable**, or `oc adm uncordon "$SOURCE"`), only if you own the cordon.
    Keep the worker installed for the next agreed test.
 5. Remove only what you created: [cleanup](ADMIN-GUIDE.md#cleanup). For the
-   disposable VM, use **Actions → Control → Stop**, wait for **Stopped**, then
-   **Actions → Delete**. Keep its test DataVolume selected in the confirmation
-   and click **Delete**. A reused VM and its disks stay intact.
+   disposable example (only if you created it), use **Actions → Control → Stop**,
+   wait for **Stopped**, then **Actions → Delete**. Keep its test DataVolume
+   selected in the confirmation and click **Delete**. A reused VM, its disks and
+   its project stay intact; do not delete the project.
 6. Fill in the [results sheet](RESULTS-TEMPLATE.md).
