@@ -2,8 +2,11 @@
 
 > **Status: automatic recovery verified on 4.22.** Redfish fencing, a new VM
 > instance on a healthy destination, its guest login prompt and source-node
-> recovery were exercised. Cleanup was held for review. The 4.21 procedure was
+> recovery were exercised. After the latest run, cleanup was held for review; an
+> earlier rehearsal completed fixture cleanup. The 4.21 procedure was
 > documentation-reviewed; **vxflexos / Block / RWX provisioning remains unverified**.
+> The pause and evidence commands in this version were checked only against local
+> sample data.
 
 Reference for commands and safety detail. The step-by-step flow is the
 [runbook](RUNBOOK.md); this guide does not repeat it. This case **really
@@ -16,7 +19,7 @@ export OPNS=openshift-workload-availability   # operator project
 # VM project and name: demo defaults for the new example. For a reused VM,
 # set both to that VM's own project and name.
 export VMNS=host-recovery-lab VM=recovery-vm
-# Cleanup ownership: set to true only after you create the example VM.
+# Created by this test? Set to true only after you create the example VM.
 export CREATED_VM=false
 export SOURCE='REPLACE_SOURCE_NODE' TARGET='REPLACE_TARGET_NODE'
 export SOURCE_IP="$(oc get node "$SOURCE" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
@@ -47,11 +50,13 @@ the administrator's known fingerprint before accepting it.
 - The selected VM (`VMNS`/`VM`) restarts automatically: run strategy **Always** or
   **RerunOnFailure**. **Manual** does not restart, so it is ineligible.
 
-### Artifact files
+### Files
 
-Apply only the file a step names; never the folder.
+Apply only the file a step names; never the folder. Fill and create the
+private copies in `$HOME/poc-private/case02` (runbook, section A), not the files
+in the checkout.
 
-| Artifact | Use |
+| File | Use |
 | --- | --- |
 | `manifests/00-namespace.yaml` | Only for the new example, if its project does not exist |
 | `manifests/00a-subscription-fence-agents-remediation.yaml` | Only if FAR is missing |
@@ -97,7 +102,7 @@ Confirm FAR `agent`, `remediationStrategy`, `retrycount`, `retryinterval`,
 `selector`, `maxUnhealthy`, `minHealthy`, `unhealthyConditions`, `pauseRequests`,
 `remediationTemplate`. A missing or renamed field means **stop and adapt**.
 
-### Ownership and controller checks
+### Overlap and controller checks
 
 Read full selectors. Change nothing that exists.
 
@@ -185,7 +190,7 @@ else
 fi
 ~~~
 
-**Critical gate:** the Redfish `UUID` (and a serial or asset tag you trust)
+**Stop check:** the Redfish `UUID` (and a serial or asset tag you trust)
 matches the `systemUUID` of SOURCE, and the Systems id is the one in the
 template. A swapped mapping power-cycles the wrong server. If it cannot be
 matched, confirm another way or **stop**.
@@ -244,9 +249,10 @@ fi
 ~~~
 
 Expected `Status: ON`. An empty `$POD` means **stop**. A TLS error means the
-image does not trust the BMC CA: **stop**. `--ssl-insecure` is never the default;
-an exception is a separate, written, host-specific owner decision, documented
-outside this procedure, using only options in the installed metadata.
+image does not trust the BMC CA: **stop**. Trust is a prerequisite; this test
+does not change the FAR image. `--ssl-insecure` is never the default. If the
+owner has approved a written, host-specific exception, record it as an exception
+on the results sheet and use only options listed in the installed metadata.
 
 ### Dry-run
 
@@ -254,21 +260,23 @@ Run after filling placeholders. Server dry-runs check admission; they do not
 prove BMC connectivity or storage availability.
 
 ~~~sh
-oc apply --dry-run=server -f manifests/01-far-template.yaml
-oc apply --dry-run=server -f manifests/02-nhc-paused.yaml
-oc apply --dry-run=server -f manifests/03-recovery-vm.yaml    # only if creating the VM
+P="$HOME/poc-private/case02"
+grep -n '^[^#]*REPLACE_' "$P/01-far-template.yaml" "$P/02-nhc-paused.yaml"   # expect no output
+oc create --dry-run=server -f "$P/01-far-template.yaml"
+oc create --dry-run=server -f "$P/02-nhc-paused.yaml"
+oc create --dry-run=server -f "$P/03-recovery-vm.yaml"    # only if creating the VM
 ~~~
 
 ### Create
 
 Each name must return **NotFound** first; an authorization error is not proof of
-absence. If anything exists, review its ownership instead of overwriting.
+absence. If anything exists, find out whose it is instead of overwriting it.
 
 ~~~sh
 oc get fenceagentsremediationtemplate case02-far-redfish-reboot -n "$OPNS"
 oc get nodehealthcheck case02-host-recovery
-oc create -f manifests/01-far-template.yaml
-oc create -f manifests/02-nhc-paused.yaml
+oc create -f "$HOME/poc-private/case02/01-far-template.yaml"
+oc create -f "$HOME/poc-private/case02/02-nhc-paused.yaml"
 ~~~
 
 While paused NHC reports observed/healthy 0/0; do not use counts. Confirm
@@ -279,31 +287,96 @@ While paused NHC reports observed/healthy 0/0; do not use counts. Confirm
 ## Evidence capture
 
 The remediation object is created and deleted by NHC and may be gone before
-anyone looks. Start before the fault, three terminals, saving to a private
-directory outside the checkout.
+anyone looks. Start three watch terminals before the fault (runbook C4). Each
+terminal is a new shell, so each block first sets the values it needs.
+
+**Administrator terminal** (the one with the Prepare values): make the private
+evidence folder and save the "before" values.
 
 ~~~sh
-mkdir -p "$HOME/.local/state" && EVID=$(mktemp -d "$HOME/.local/state/case02-evidence.XXXXXX") && echo "$EVID"
-# terminal A (export OPNS EVID first)
-oc get fenceagentsremediation -n "$OPNS" --watch --output-watch-events -o json > "$EVID/far.json"
-# terminal B (export VMNS VM EVID first; watches only the selected VM)
-oc get vmi -n "$VMNS" --field-selector metadata.name="$VM" --watch --output-watch-events -o json > "$EVID/vmi.json"
-# terminal C
-oc get nodes -l host-recovery-lab.example.com/source=case02 --watch --output-watch-events -o json > "$EVID/nodes.json"
+mkdir -p "$HOME/.local/state" && EVID=$(mktemp -d "$HOME/.local/state/case02-evidence.XXXXXX") && echo "EVID=$EVID"
+oc get vmi "$VM" -n "$VMNS" -o jsonpath='{.metadata.uid}{"\n"}' | tee "$EVID/vmi-before.uid"
+oc get node "$SOURCE" -o jsonpath='{.status.nodeInfo.bootID}{"\n"}' | tee "$EVID/source-boot-before.txt"
 ~~~
 
-Also check the BMC event/lifecycle log (power-cycle time) and SOURCE's node boot
-ID. Fence-before-restart order: the remediation's
-`FenceAgentActionSucceeded=True` `lastTransitionTime` should be earlier than the
-new VMI's `creationTimestamp`.
+Copy the printed folder path. Paste it in place of `PASTE_EVIDENCE_FOLDER`
+below and in the runbook's fault step (C5).
+
+**Terminal A**, remediations:
 
 ~~~sh
-jq -r 'select(.object.status.conditions != null) | .object.status.conditions[] | select(.type=="FenceAgentActionSucceeded" and .status=="True") | .lastTransitionTime' "$EVID/far.json" | sort -u | head -n 1
-jq -r 'select(.type=="ADDED") | .object.metadata.uid + " " + .object.metadata.creationTimestamp' "$EVID/vmi.json"
+export OPNS=openshift-workload-availability EVID='PASTE_EVIDENCE_FOLDER'
+test -d "$EVID" && oc get fenceagentsremediation -n "$OPNS" --watch --output-watch-events -o json > "$EVID/far.json"
 ~~~
 
-Missing or tied fence evidence is **Blocked**, not Pass, unless the BMC log
-clearly shows the reset before the new instance was created.
+**Terminal B**, the selected VM only:
+
+~~~sh
+export VMNS='PASTE_VM_PROJECT' VM='PASTE_VM_NAME' EVID='PASTE_EVIDENCE_FOLDER'
+test -d "$EVID" && oc get vmi -n "$VMNS" --field-selector metadata.name="$VM" --watch --output-watch-events -o json > "$EVID/vmi.json"
+~~~
+
+**Terminal C**, the SOURCE node:
+
+~~~sh
+export EVID='PASTE_EVIDENCE_FOLDER'
+test -d "$EVID" && oc get nodes -l host-recovery-lab.example.com/source=case02 --watch --output-watch-events -o json > "$EVID/nodes.json"
+~~~
+
+Each watch keeps running and prints nothing. If one returns to the prompt at
+once, its folder path is wrong: fix it and start it again.
+
+**Confirm the watches**, in the administrator terminal, before the fault:
+
+~~~sh
+jq -r 'select(.type == "ADDED") | .object.metadata.uid' "$EVID/vmi.json"
+jq -r 'select(.type == "ADDED") | .object.metadata.name' "$EVID/nodes.json"
+~~~
+
+**Expected:** the "before" VMI UID, then SOURCE's name. `far.json` is normally
+still empty. If either line is missing, stop; do not cause the fault.
+
+Also check the BMC event log (power-cycle time) and SOURCE's boot ID afterwards.
+
+<a id="read-the-evidence"></a>
+
+### Read the evidence
+
+After the watches are stopped (runbook D2), in the administrator terminal. This
+uses only this run's records: the remediation for SOURCE that this health check
+created after the fault started, and the VM's **new** instance. The "before"
+instance that the watch listed at start is excluded.
+
+~~~sh
+FAULT=$(cat "$EVID/fault-start.txt")
+REM_UID=$(jq -r --arg src "$SOURCE" --arg t "$FAULT" '
+  select(.object.metadata.creationTimestamp >= $t)
+  | select(.object.metadata.name == $src or .object.metadata.annotations["remediation.medik8s.io/node-name"] == $src)
+  | select(any(.object.metadata.ownerReferences[]?; .kind == "NodeHealthCheck" and .name == "case02-host-recovery"))
+  | .object.metadata.uid' "$EVID/far.json" | sort -u)
+FENCE_AT=$(jq -r --arg uid "$REM_UID" 'select(.object.metadata.uid == $uid) | .object.status.conditions[]?
+  | select(.type == "FenceAgentActionSucceeded" and .status == "True") | .lastTransitionTime' "$EVID/far.json" | sort -u)
+NEW_UID=$(oc get vmi "$VM" -n "$VMNS" -o jsonpath='{.metadata.uid}')
+NEW_AT=$(jq -r --arg uid "$NEW_UID" --arg old "$(cat "$EVID/vmi-before.uid")" '
+  select($uid != $old and .object.metadata.uid == $uid) | .object.metadata.creationTimestamp' "$EVID/vmi.json" | sort -u)
+printf 'remediation=%s\nfence_success=%s\nnew_vmi=%s created=%s\n' "$REM_UID" "$FENCE_AT" "$NEW_UID" "$NEW_AT" | tee "$EVID/readout.txt"
+n() { printf '%s\n' "$1" | grep -c .; }
+if [ "$(n "$REM_UID")" != 1 ] || [ "$(n "$FENCE_AT")" != 1 ] || [ "$(n "$NEW_AT")" != 1 ]; then echo "BLOCKED: evidence missing or ambiguous"
+elif [[ "$FENCE_AT" < "$NEW_AT" ]]; then echo "ORDER OK: fence succeeded before the new VMI was created"
+elif [ "$FENCE_AT" = "$NEW_AT" ]; then echo "TIE: same second; see the BMC rule below"
+else echo "FAIL: the new VMI was created before the fence succeeded"; fi
+~~~
+
+How to read it:
+
+- **ORDER OK:** fence-before-restart is shown for this run.
+- **BLOCKED:** a value is missing, or more than one remediation, success time
+  or new instance matched. Do not pick one by hand. Record **Blocked**.
+- **TIE:** both times fall in the same second. Only then may the BMC event log
+  decide: if it clearly shows the reset before the new VMI's creation time,
+  record that and Pass the order check; otherwise **Blocked**. The BMC log never
+  replaces missing or ambiguous remediation evidence.
+- **FAIL:** record **Fail**.
 
 ## The fault and what to watch
 
@@ -340,21 +413,23 @@ paused NHC skips cleanup of remediation objects for healthy nodes, so pausing
 too early can leave the object and taints in place.
 
 - **Normal end:** wait for the object to be gone, SOURCE Ready and taints
-  cleared, **then** pause.
+  cleared, **then** pause (runbook D3; its CLI block keeps other owners'
+  reasons and refuses to write if the health check changed meanwhile).
 - **Abort before a remediation exists:** pause, then back out the fault.
 - **Abort with a remediation in flight:** escalate to the owner at the budget
   limit. The owner decides whether to remove the pause so cleanup can finish or
   to restore the host through the BMC console. Manual recovery is **Fail**.
 - Before any deletion, confirm controllers are quiet and the BMC reports `On`.
 
-## Cordon ownership
+## Who removes the cordon
 
 You cordon SOURCE in the runbook, so you own that cordon. Uncordon when SOURCE is
 healthy, and only if no one else has cordoned it since.
 
 If the temporary remediation object is already gone, use **Home → Events**,
 select **openshift-workload-availability**, and filter **Fence agent**. Save the
-event promptly. Use the native watch capture for fence-before-restart timestamps.
+event promptly. Use the [evidence readout](#read-the-evidence) for
+fence-before-restart timestamps.
 
 ![Retained event reports successful fencing; keep the captured remediation conditions for timing evidence](images/07-fence-succeeded.png)
 
@@ -370,7 +445,7 @@ created and recorded.
 | Selected VM (`VM` in `VMNS`) | Delete only if you created it as the example; a reused VM, its disks and project stay unchanged |
 | Node label `host-recovery-lab.example.com/source` | Remove from SOURCE |
 | Cordon on SOURCE | Uncordon when healthy, only if you own it |
-| Evidence and `$PRIV` | Keep evidence private; securely remove `$PRIV` |
+| Evidence, `$PRIV` and filled copies | Keep evidence private; securely remove `$PRIV`; keep or delete `$HOME/poc-private/case02` with the owner |
 | Operators, `openshift-workload-availability`, OperatorGroup | **Keep** (shared) |
 
 ~~~sh

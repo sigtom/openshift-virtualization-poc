@@ -13,12 +13,14 @@ Warm-up ____ s   Measure ____ s   Repeats ____ (proposal 300 / 900 / 3)
 
 Path used: **A existing VMs / B lab VMs**.   Owner permission and window: ______
 
-| Role | VM and project | vCPU / RAM | Worker | Address used (Pod IP, or other) |
-| --- | --- | --- | --- | --- |
-| Measured server | | | | |
-| Measured client | | | | |
-| Competitor server(s) | | | | |
-| Competitor client(s) | | | | |
+| Role | VM and project | vCPU / RAM | Worker | Address used (Pod IP, or other) | Guest card / test address (`POC_BIND`, if set) |
+| --- | --- | --- | --- | --- | --- |
+| Measured server | | | | | |
+| Measured client | | | | | |
+| Competitor server(s) | | | | | |
+| Competitor client(s) | | | | | |
+
+Helpers: in the image / copied to `~/poc-bin` (participants set PATH at each login): ______
 
 Layout: **same-host control / cross-host / external**.   Address kind (same in every run): ______
 Changes made to any VM or guest, and how undone: ______

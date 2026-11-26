@@ -2,7 +2,8 @@
 
 Keep completed copies and raw environment evidence private. Use **Pass**,
 **Fail**, **Blocked** or **Not run** for each result. A CLI pass does not verify
-the web console.
+the web console. The full case passes only when both the requested move (test 4)
+and the automatic move (test 5) pass.
 
 Date: ______   Presenter: ______   Administrator: ______
 OCP: ______   Virtualization: ______   Descheduler operator: ______
@@ -14,11 +15,12 @@ OCP: ______   Virtualization: ______   Descheduler operator: ______
 | 1. Approved host | placement-01 starts on Worker A | | | |
 | 2. Separation | Three spread VMs use three approved workers | | | |
 | 3. Impossible rule | negative-01 stays unscheduled; FailedScheduling appears | | | |
-| 4. Manual move — optional | Person-requested migration succeeds to Worker B | | | |
+| 4. Requested move | Person-requested migration succeeds to Worker B (required for the full result; **Not run** only in a shortened exercise) | | | |
 | 5. Predictive | Node-affinity candidate appears; VM stays on SOURCE | | | |
 | 5. Automatic | Node-affinity request causes a new cluster-created migration to TARGET | | | |
 | 5. Continuity | Same boot and running-instance IDs; uptime increases; VM healthy | | | |
 | CPU-load balancing | Outside this walkthrough | Not run | Not run | Optional separate evaluation |
+| **Full case** | Tests 1–5 pass, including **both** migrations | | | |
 
 ## Automatic-migration evidence
 
@@ -35,7 +37,7 @@ OCP: ______   Virtualization: ______   Descheduler operator: ______
 
 | Required checkpoint | Confirmed / evidence |
 | --- | --- |
-| Preflight complete on this cluster: versions/APIs, source capacity, storage, permissions, nodes and ownership | |
+| Preflight complete on this cluster: versions/APIs, source capacity, storage, permissions, nodes and object owners | |
 | Exclusive lab namespace and PriorityClass identities recorded; VM disks prepared | |
 | Actual placement launcher priority/class and Ready/LiveMigratable/AgentConnected verified | |
 | Original shared-descheduler configuration saved before editing | |

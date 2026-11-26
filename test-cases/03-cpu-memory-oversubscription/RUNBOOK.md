@@ -5,7 +5,10 @@ host’s CPU and memory. More virtual resources than host capacity is called
 *oversubscription*.
 
 **Start with existing VMs.** No new VMs or configuration changes are needed if
-[your VMs meet the requirements](ADMIN-GUIDE.md#path-a). The administrator
+[your VMs meet the requirements](ADMIN-GUIDE.md#path-a). Your sheet gives each VM
+a role: the **measured VM** runs the workload you compare, and the **competitor
+VMs** add the extra demand. Existing VMs keep their names, sizes and hosts; only
+the role is new. The administrator
 prepares the [results sheet](RESULTS-TEMPLATE.md), tools and graphs first.
 [New test VMs](ADMIN-GUIDE.md#prepare) are a fallback.
 
@@ -39,6 +42,18 @@ Paste **one command at a time** into the guest console, press **Enter**, and wai
 its expected output before continuing. If the existing guest uses a different console,
 use the working console the administrator lists on your sheet.
 
+**Every time you log in to a guest** (the measured VM and each competitor), run this
+first if your sheet says the helpers are in `~/poc-bin`:
+
+```sh
+export PATH="$HOME/poc-bin:$PATH"
+command -v poc-sysbench poc-load poc-stats
+```
+
+**Expected:** three file paths. A new login does not remember the setting, so repeat it
+after every new login. If a path is missing, stop and tell the administrator. VMs made
+from the prepared image already have the helpers and need no setting.
+
 ## 2. Record a baseline
 
 A baseline is the result before adding competing load. Use the measured command
@@ -69,7 +84,8 @@ or latency summary is above the visible area.
 
 1. Check that the **competitor VMs** on your sheet are Running on the **same Node**
    as the measured VM. These VMs provide the extra demand.
-2. Open each competitor’s **Serial console** and run:
+2. Open each competitor’s **Serial console**, log in, set the helper path as in
+   step 1 if your sheet says so, and run:
 
    ```sh
    poc-load start cpu 4500

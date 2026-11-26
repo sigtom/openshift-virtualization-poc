@@ -7,7 +7,7 @@
 
 
 The customer follows the [walkthrough](RUNBOOK.md). This guide holds everything
-complex: approvals, capacity maths, tools, isolation, metrics, memory gate, reset.
+complex: approvals, capacity maths, tools, isolation, metrics, memory prerequisites, reset.
 
 <a id="prepare"></a>
 
@@ -19,7 +19,7 @@ complex: approvals, capacity maths, tools, isolation, metrics, memory gate, rese
 - [ ] Path B only: [tool image](#tools) built; [test host isolated](#isolate); [lab created](#create).
 - [ ] Capacity recorded and [competitor count](#capacity) derived and approved.
 - [ ] [Metrics](#metrics) queries verified against installed series.
-- [ ] [Memory gate](#memory-gate) ticked **or** memory phase marked Blocked.
+- [ ] [Memory prerequisites](#memory-gate) ticked **or** memory phase marked Blocked.
 - [ ] Optional [HammerDB](#hammerdb) ready.
 
 <a id="approvals"></a>
@@ -98,9 +98,34 @@ resize VMs to reach a number: use fewer competitors, or Path B.
 
 | Missing | Smallest change | Disruption |
 | --- | --- | --- |
-| helper commands | Copy the files in `guest-tools/` into one folder as an ordinary guest user, for example `~/poc-bin`, make them executable and add that folder to `PATH` for the session (`export PATH="$HOME/poc-bin:$PATH"`). Typing the file contents with `cat > file` in the console works if copy is unavailable | Guest-only; **no VM restart**. Undo: remove only copied helper files |
+| helper commands | Copy `poc-sysbench`, `poc-load` and `poc-stats` from `guest-tools/` into `~/poc-bin` of the ordinary guest account (steps below). Write "helpers in `~/poc-bin`" on the sheet so participants set the path at each login | Guest-only; **no VM restart**. Undo: remove only the copied helper files |
 | sysbench / stress-ng | Install through the **owner's approved** package route | Guest-only install. Record what was installed; undo with the package manager |
 | console / guest access | Use access the owner already gives you; do not create new users or keys | none |
+
+**Copy the helpers into one guest** (as the ordinary guest user, in the VM's
+serial console). First make the folder:
+
+```sh
+mkdir -p ~/poc-bin
+ls ~/poc-bin
+```
+
+The list must not already contain `poc-sysbench`, `poc-load` or `poc-stats`. If it
+does, stop: they are someone else's files. Then, for each of the three files: type `cat > ~/poc-bin/poc-sysbench` (use the
+file's name), press **Enter**, paste that file's full contents from `guest-tools/`,
+press **Enter**, then **Ctrl+D**. If SSH access to the guest already exists, you can
+copy the files with `scp` instead; do not enable SSH just for this. Then:
+
+```sh
+chmod 0755 ~/poc-bin/poc-sysbench ~/poc-bin/poc-load ~/poc-bin/poc-stats
+export PATH="$HOME/poc-bin:$PATH"
+command -v poc-sysbench poc-load poc-stats
+poc-stats
+```
+
+**Expected:** three paths under `~/poc-bin`, then a short CPU and memory summary.
+The `export` line lasts only for this login. Participants repeat it at every new
+login (walkthrough step 1).
 
 Never replace the VM's cloud-init, users or storage, never delete guest data, and
 do not restart workloads to add tools. Changes that need a **VM restart or
@@ -153,11 +178,17 @@ the helper commands. Put them in the approved image, as root during the image bu
 1. **Preferred: approved tool image.** Build one VM from the stock RHEL 9
    source using the client's authorized method (for example a temporary
    administrator-only cloud-init with an approved SSH public key, over a
-   subscription, Satellite or mirror the client permits). Install the tools,
-   run `cloud-init clean`, stop the VM, then publish its disk as a DataSource
-   (console: **Virtualization → Bootable volumes → Add volume**, or a
-   DataVolume cloned from its PVC). Put that DataSource's name and namespace
-   in the manifests. Delete the temporary administrator access afterwards.
+   subscription, Satellite or mirror the client permits). Install the tools.
+   **Before sealing**, if you added temporary access to the guest, remove it
+   inside the guest: delete the temporary key line from that user's
+   `~/.ssh/authorized_keys` (or delete the temporary user). Then run
+   `sudo cloud-init clean --logs`, stop the VM, and publish its disk as a
+   DataSource (console: **Virtualization → Bootable volumes → Add volume**, or
+   a DataVolume cloned from its PVC). Put that DataSource's name and namespace
+   in the manifests. Removing the cloud-init setting from the source VM later
+   does not change disks already copied from the image, so the cleanup must
+   happen inside the guest first. Check one new VM from the image has no
+   temporary key. If no temporary access was added, skip this.
    (Alternative to a baked image: copy the files into one guest at a time as in 3.3, using an
    existing root session the owner already approves; no secret reference is needed.)
 2. **Install in each guest** through the same authorized route, reviewed by the
@@ -251,21 +282,27 @@ measured, 30 GiB each competitor). After population, open each PVC and verify
 **Bound**, **vxflexos**, **Block**, and **ReadWriteMany**. Stop on unsupported
 storage or clone errors. This optional path does not require changing existing VMs.
 
-Apply in order, from the case directory (console alternative: **+ → Import
-YAML**):
+Fill private copies outside the checkout, then create them in order from the
+case directory (console alternative: **+ → Import YAML**). `oc create` refuses
+an object that already exists, so nothing existing is changed:
 
 ~~~sh
-oc apply -f manifests/00-namespace.yaml
-oc apply -f manifests/01-measured-vm.yaml
-oc apply -f manifests/02-competitor-vm-01.yaml -f manifests/02-competitor-vm-02.yaml
+P="$HOME/poc-private/case03"; mkdir -p "$P" && chmod 700 "$P"
+cp manifests/00-namespace.yaml manifests/01-measured-vm.yaml manifests/02-competitor-vm-0*.yaml "$P/"
+# fill REPLACE_* in the copies, then:
+oc create -f "$P/00-namespace.yaml"
+oc create -f "$P/01-measured-vm.yaml"
+oc create -f "$P/02-competitor-vm-01.yaml" -f "$P/02-competitor-vm-02.yaml"
 ~~~
+
+If a create reports *already exists*, stop: that object is not yours.
 
 Need more competitors? Each extra VM needs a **unique** name everywhere
 (VM, its DataVolume, hostname, `kubevirt.io/domain` and
 `perf-lab.example.com/vm` labels). Generate it so none is missed:
 
 ~~~sh
-bash scripts/render-competitor.sh 03 > /tmp/cpumem-load-03.yaml   # then replace REPLACE_*; repeat 04, 05…
+bash scripts/render-competitor.sh 03 > "$HOME/poc-private/case03/cpumem-load-03.yaml"   # then fill REPLACE_*; repeat 04, 05…
 ~~~
 
 The VM sizes (2 vCPU, 4 GiB) and the **absence** of an explicit memory request
@@ -382,7 +419,7 @@ windows.
 
 ![Host memory query; use the same test-node selector](images/08-host-memory.png)
 
-## 10. Memory gate (do not skip)
+## 10. Memory prerequisites (do not skip)
 
 The memory phase needs memory density **and** swap on the test worker. The full
 step-by-step procedure (check, prepare swap, enable in the console, verify, roll back)
@@ -420,7 +457,7 @@ This case never selects control-plane nodes.
 - **Path B (new VMs):** save results first. Use **Virtualization → VirtualMachines**,
   select project `perf-cpumem-lab`, and delete only the named VMs you created
   for this case. Check each name and UID against your private creation record
-  (**VM → YAML → metadata.uid**); a project label alone is not proof of ownership.
+  (**VM → YAML → metadata.uid**); a project label alone does not prove you created it.
   Delete associated disks only after the storage owner agrees. A `Retain` PV
   keeps its data after PVC deletion; report it rather than deleting the PV yourself.
 

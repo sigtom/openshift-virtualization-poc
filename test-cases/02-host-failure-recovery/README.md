@@ -2,7 +2,8 @@
 
 > **Status: automatic recovery verified on 4.22.** Redfish fencing, a new VM
 > instance on a healthy destination, its guest login prompt and source-node
-> recovery were exercised. Cleanup was held for review. The 4.21 procedure was
+> recovery were exercised. After the latest run, cleanup was held for review; an
+> earlier rehearsal completed fixture cleanup. The 4.21 procedure was
 > documentation-reviewed; **vxflexos / Block / RWX provisioning remains unverified**.
 
 For VMware/vCenter teams comparing this with vSphere HA host-failure restart.

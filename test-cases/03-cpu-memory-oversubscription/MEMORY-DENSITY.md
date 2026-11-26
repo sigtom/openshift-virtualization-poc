@@ -1,6 +1,6 @@
 # Administrator appendix: enable, verify and undo memory density
 
-> **Memory-density and swap changes NOT TESTED. Administrator only.**
+> **Deferred and NOT TESTED. Administrator only; the cluster owner decides whether it runs.**
 > The screenshot verifies read-only navigation, not enabling this feature.
 > Source: Red Hat OpenShift Virtualization documentation, chapter
 > *Postinstallation configuration*, section *Configuring higher VM workload density*
@@ -8,7 +8,7 @@
 > [4.22](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/postinstallation-configuration)).
 > See [REFERENCES.md](REFERENCES.md). Re-read the section for the installed version on the
 > day: if it differs from this appendix, the documentation wins. Customers never do any of this;
-> their walkthrough needs only the result: *memory gate ticked* or *Blocked*.
+> their walkthrough needs only the result: *Memory prerequisites approved* or *Blocked*.
 
 **Why this exists.** A VM's memory *request* is about its guest RAM, and the scheduler
 admits VMs only while requests fit the node. A memory-contention test needs competitors that
@@ -32,15 +32,29 @@ ships no change for control-plane nodes.
 
 ## Step 0. Back up first (private folder outside this repository)
 
+Each run gets its own new folder, so a retry never overwrites the original record:
+
 ~~~sh
-mkdir -p "$HOME/memdensity-backup" && cd "$HOME/memdensity-backup"
-oc get hyperconvergeds.v1beta1.hco.kubevirt.io kubevirt-hyperconverged -n openshift-cnv -o yaml > hco.yaml
-oc get mcp -o yaml > mcp.yaml
-oc get mc -o name > mc-names.txt
-oc get kubeletconfig -o yaml > kubeletconfig.yaml
-oc get nodes --show-labels > nodes-labels.txt
-oc get ds -A | grep -i wasp > wasp-before.txt || true
+mkdir -p "$HOME/memdensity-backup"
+if B=$(mktemp -d "$HOME/memdensity-backup/run-XXXXXX"); then
+  echo "Backup folder: $B"
+  oc get hyperconvergeds.v1beta1.hco.kubevirt.io kubevirt-hyperconverged -n openshift-cnv -o yaml > "$B/hco.yaml"
+  oc get mcp -o yaml > "$B/mcp.yaml"
+  oc get mc -o name > "$B/mc-names.txt"
+  oc get kubeletconfig -o yaml > "$B/kubeletconfig.yaml"
+  oc get nodes --show-labels > "$B/nodes-labels.txt"
+  oc get ds -A | grep -i wasp > "$B/wasp-before.txt" || true
+  oc debug node/TESTNODE -- chroot /host swapon --show > "$B/swap-before.txt"
+else
+  echo "STOP: could not create a new backup folder. Do not continue."
+fi
 ~~~
+
+If any backup command reports an error, stop before changing settings.
+Write the folder of the **first** run on the results sheet. If you repeat the test
+later, the restore still uses that first folder: it holds the state before any change.
+`swap-before.txt` is empty when the node had no swap; otherwise it lists the client's
+own swap, which stays in place afterwards.
 
 Console equivalent: open each object's **YAML** tab and download it. You will restore only the
 fields you touched. Never replace a whole shared object from these copies.
@@ -92,10 +106,10 @@ The commands below are written for v1beta1; for v1 replace the resource name and
 
 ~~~sh
 R=hyperconvergeds.v1beta1.hco.kubevirt.io
-oc get $R kubevirt-hyperconverged -n openshift-cnv -o jsonpath='parent={.spec.higherWorkloadDensity}{"\n"}value={.spec.higherWorkloadDensity.memoryOvercommitPercentage}{"\n"}'
+oc get $R kubevirt-hyperconverged -n openshift-cnv -o jsonpath='parent={.spec.higherWorkloadDensity}{"\n"}value={.spec.higherWorkloadDensity.memoryOvercommitPercentage}{"\n"}' | tee "$B/density-before.txt"
 ~~~
 
-Write both lines on the results sheet. Cases: **parent empty** (absent), **parent present, value
+Write both lines on the results sheet (first run only). Cases: **parent empty** (absent), **parent present, value
 empty** (other keys may exist), **value present** (reuse branch if density is meant to stay).
 
 ## Step 4. Choose the pool (no control plane) and run the collision preflight
@@ -129,8 +143,9 @@ and your new role, so the pool **inherits every worker MachineConfig**; a node t
 worker label and `node-role.kubernetes.io/ROLE=` is managed by the new pool. Joining or leaving a
 pool can drain and reboot the node. Do it for **one** worker-only node with no other VMs:
 
-1. Fill the template; `oc apply --dry-run=server -f FILE`; apply (console **Compute →
-   MachineConfigPools → Create**).
+1. Fill a private copy of the template; `oc create --dry-run=server -f FILE`; then
+   `oc create -f FILE` (console **Compute → MachineConfigPools → Create**). `create`
+   refuses a pool that already exists.
 2. Wait for the pool to show **Updated** with 0 nodes.
 3. Label exactly one worker-only node (**Compute → Nodes → node → Actions → Edit labels**).
 4. Wait until the pool shows 1 node and **Updated** again.
@@ -148,10 +163,10 @@ With **all lab VMs stopped** and no other workloads on the test node:
    replace `REPLACE_POOL_ROLE` (name and role label) and only the `REPLACE_SWAP_SIZE_MB` value token (keep the
    `SWAP_SIZE_MB` variable name unchanged). Diff it against the
    documentation section for the installed version.
-3. `oc apply --dry-run=server -f FILE` must succeed. Console: **Compute → MachineConfigs →
+3. `oc create --dry-run=server -f FILE` must succeed. Console: **Compute → MachineConfigs →
    Create MachineConfig**.
 4. Preflight again: pool **Updated** and not **Degraded**; Step 4 results still true; window open.
-5. Apply. Watch **Compute → MachineConfigPools → POOL**: nodes cordon, drain, reboot, return,
+5. Create it: `oc create -f FILE` (refuses an existing MachineConfig of that name). Watch **Compute → MachineConfigPools → POOL**: nodes cordon, drain, reboot, return,
    one at a time. `oc wait mcp POOL --for condition=Updated=True --timeout=-1s` waits.
 6. Verify: `oc debug node/TESTNODE -- chroot /host free -m` shows swap of about the size set.
 
@@ -209,26 +224,38 @@ Do these in order.
    `MemAvailable` (`free -m`, "available") must exceed swap *used* with a clear margin. If it
    does not, do not remove swap while anything runs: stop more workloads on that node first.
    Removing swap config reboots the node, but do not rely on that to clean up under pressure.
-3. **Restore memory density** (skip if you reused an existing setting). Console: use the **Memory density** path in Step 1, set the recorded value, or turn it
-   off if it was off. CLI, restoring **only** the field you touched, using the Step 3 record:
+3. **Restore memory density** (skip if you reused an existing setting). Console: use the
+   **Memory density** path in Step 1, first check it still shows the value you set, then set
+   the recorded value, or turn it off if it was off. CLI, changing **only** the one field you
+   touched, using the first run's Step 3 record. Each patch first tests that the field still
+   holds the value you set (150 in these examples); replace 150 and 100 with your values:
 
    - *Value was present* (for example 100): set it back:
-     `oc patch $R kubevirt-hyperconverged -n openshift-cnv --type=merge -p '{"spec":{"higherWorkloadDensity":{"memoryOvercommitPercentage":100}}}'`
-   - *Parent existed with other keys, value absent*: remove only the value:
-     `oc patch $R kubevirt-hyperconverged -n openshift-cnv --type=merge -p '{"spec":{"higherWorkloadDensity":{"memoryOvercommitPercentage":null}}}'`
-   - *Parent was absent entirely*: remove the parent you created:
-     `oc patch $R kubevirt-hyperconverged -n openshift-cnv --type=merge -p '{"spec":{"higherWorkloadDensity":null}}'`
+     `oc patch $R kubevirt-hyperconverged -n openshift-cnv --type=json -p '[{"op":"test","path":"/spec/higherWorkloadDensity/memoryOvercommitPercentage","value":150},{"op":"replace","path":"/spec/higherWorkloadDensity/memoryOvercommitPercentage","value":100}]'`
+   - *Value was absent* (with or without its parent): remove only the value:
+     `oc patch $R kubevirt-hyperconverged -n openshift-cnv --type=json -p '[{"op":"test","path":"/spec/higherWorkloadDensity/memoryOvercommitPercentage","value":150},{"op":"remove","path":"/spec/higherWorkloadDensity/memoryOvercommitPercentage"}]'`
+
+   Other settings under `higherWorkloadDensity`, including any added by someone else since,
+   stay as they are. Do not remove the parent object. If the patch reports that the test
+   failed, someone changed the setting after you: nothing was written. Stop and ask the owner.
+   The installed version may fill a default value back in after a removal; that is expected.
 
    Never `oc replace` or `oc apply` the saved `hco.yaml`.
-4. **Remove the swap configuration you added:** delete **only** the MachineConfig you created
-   (**Compute → MachineConfigs →** `90-…-perf-swap` **→ Delete**). The pool reboots node by node.
-   Wait for **Updated**.
-5. **Verify swap is gone:** `free -m` shows swap `0` on the test node; no leftover
-   `/var/tmp/swapfile` (delete the file you created if the removal left it, with the owner's
-   approval). Confirm the `wasp-agent` DaemonSet is gone if you caused it.
+4. **Remove the swap configuration you added**, if you added one: delete **only** the
+   MachineConfig you created (**Compute → MachineConfigs →** `90-…-perf-swap` **→ Delete**).
+   The pool reboots node by node. Wait for **Updated**. If the client already provided swap
+   (Step 4), skip this: their swap stays.
+5. **Verify swap matches the start:** run
+   `oc debug node/TESTNODE -- chroot /host swapon --show` and compare it with
+   `swap-before.txt` from the first backup folder. No swap before means none now; the client's
+   own swap before means the same devices, types, sizes and priorities now. The
+   amount marked **USED** can change during the test; it need not match. Remove a leftover `/var/tmp/swapfile` only if this
+   test created it, with the owner's approval. Confirm the `wasp-agent` DaemonSet is gone if
+   you caused it.
 6. **Remove the pool you created**, if any (Step 4 rollback). Never delete a pool you did not create.
-7. **Verify against the backup:** only the field you touched differed, and now matches Step 3;
-   `oc get mc -o name` against `mc-names.txt`; node labels against `nodes-labels.txt`; pools Updated.
+7. **Verify against the first backup folder:** only the field you touched differed, and now
+   matches `density-before.txt`; `oc get mc -o name` against `mc-names.txt`; node labels
+   against `nodes-labels.txt`; swap against `swap-before.txt`; pools Updated.
 8. Record the restoration on the results sheet.
 
 ## Known cautions

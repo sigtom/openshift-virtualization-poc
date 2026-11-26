@@ -26,7 +26,7 @@ share its host?* One fixed **measured VM** runs the same benchmark while
 ## The scenario
 
 Four phases on **one isolated worker**: baseline, CPU contention,
-memory contention (only if the memory gate is approved), and a recovery
+memory contention (only if the memory prerequisites are approved), and a recovery
 baseline. The measured VM stays unchanged. Compare each workload with its matching
 baseline and recovery result; only competing demand changes.
 Proposal: 5 min warm-up, 15 min measure, 3 repeats, all negotiable.

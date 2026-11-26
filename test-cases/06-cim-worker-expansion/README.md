@@ -2,7 +2,8 @@
 
 > **Status: results verified with a 4.21 hub and 4.22 workload cluster.**
 > Registration, installation, added Ready capacity and a Running check pod were
-> exercised. Cleanup was held for review. A 4.21 workload cluster was not tested;
+> exercised. After the latest run, cleanup was held for review; an earlier
+> rehearsal removed its check workload. A 4.21 workload cluster was not tested;
 > this remains manual expansion.
 
 For teams used to adding ESXi hosts to a vSphere cluster. Using the existing

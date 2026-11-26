@@ -2,7 +2,8 @@
 
 > **Status: results verified with a 4.21 hub and 4.22 workload cluster.**
 > Registration, installation, added Ready capacity and a Running check pod were
-> exercised. Cleanup was held for review. A 4.21 workload cluster was not tested;
+> exercised. After the latest run, cleanup was held for review; an earlier
+> rehearsal removed its check workload. A 4.21 workload cluster was not tested;
 > this remains manual expansion.
 
 Reference for commands and safety detail; the step-by-step flow is the
@@ -31,6 +32,11 @@ host-inventory object on the hub.
 - A BMC address with the vendor-appropriate URI. Dell iDRAC uses
   `idrac-virtualmedia://`, not the generic `redfish-virtualmedia://`.
 - BMC credentials stay private. No password goes in this repository.
+- Network and storage reach: the new host must reach the hub for discovery, the
+  workload cluster's machine network, and the networks and storage its VMs will
+  use. Reusing an inventory that already gives hosts those networks needs no
+  extra network configuration. If bonds, VLANs or static addresses are needed and
+  the inventory does not provide them, the network administrator supplies them.
 
 ### Administrator preparation (runbook A4)
 
@@ -39,13 +45,19 @@ terminal, and do the four steps in order. You hand back a usable inventory, a
 private BMC Secret and a filled, paused host file. Do not upload the file or
 start discovery here.
 
-**1. Set the values** (names from runbook A1):
+**1. Set the values** (names from runbook A1). `BMC_SECRET` must be a name that
+does not exist yet in the inventory namespace:
 
 ~~~sh
 export INV_NS='REPLACE_INVENTORY_NAMESPACE'     # namespace of the host-inventory InfraEnv
 export INV='REPLACE_INFRAENV_NAME'
 export HOST='REPLACE_SPARE_HOST_NAME'
+export BMC_SECRET="$HOST-bmc-secret"
+oc get secret "$BMC_SECRET" -n "$INV_NS"        # expected: NotFound
 ~~~
+
+If the Secret already exists, it belongs to something else. Leave it alone and
+choose another `BMC_SECRET` name.
 
 **2. Choose the inventory.** Reuse an existing one, unchanged, if it passes
 this read-only check: `clusterRef` empty and `autoApprove` not `true`.
@@ -68,6 +80,7 @@ suitable. Create a separate one (optional):
 3. The example uses DHCP. For bonds, VLANs or static IPs, have the network
    administrator supply a host-specific NMStateConfig labelled to match the
    template's selector, including the storage network if the worker will run VMs.
+   Create the inventory with `oc create` (below), which never changes an existing one.
 4. Console: **Quick create (+) → Import YAML**, choose the inventory project,
    paste the definition, **Create**. Or:
    ~~~sh
@@ -77,32 +90,77 @@ suitable. Create a separate one (optional):
    `INV_NS` (step 1) to it.
 
 **3. Create the private BMC Secret.** Use a separate Secret for this host: the
-host controller can take ownership of it and remove it when the host is deleted.
+host controller treats it as part of the host and can remove it when the host is deleted.
 Create it from files, never from literals. The keys are `username` and
 `password`. (The console's **With BMC Form** takes them directly; this runbook
 uses the paused file, which needs the Secret.)
 
+Paste the whole block. It prints `OK` or `STOP` on its last line, and always
+removes the temporary password files.
+
 ~~~sh
-umask 077; PRIV=$(mktemp -d)
-read -r -p 'BMC username: ' u; printf '%s' "$u" > "$PRIV/username"
-read -r -s -p 'BMC password: ' p; printf '%s' "$p" > "$PRIV/password"; echo
-unset u p
-oc create secret generic "$HOST-bmc-secret" -n "$INV_NS" \
-  --from-file=username="$PRIV/username" --from-file=password="$PRIV/password"
-rm -f "$PRIV/username" "$PRIV/password"
-rmdir "$PRIV"
-unset PRIV
+umask 077
+if PRIV=$(mktemp -d); then
+  read -r -p 'BMC username: ' u; printf '%s' "$u" > "$PRIV/username"
+  read -r -s -p 'BMC password: ' p; printf '%s' "$p" > "$PRIV/password"; echo
+  unset u p
+  if oc create secret generic "$BMC_SECRET" -n "$INV_NS" \
+       --from-file=username="$PRIV/username" --from-file=password="$PRIV/password"; then
+    RESULT="OK: Secret $BMC_SECRET created"
+  else
+    RESULT="STOP: Secret not created. Do not continue."
+  fi
+  rm -f "$PRIV/username" "$PRIV/password"; rmdir "$PRIV"; unset PRIV
+  echo "$RESULT"
+else
+  echo "STOP: could not make a private folder. Nothing was created."
+fi
 ~~~
+
+Only on `OK`, check the new Secret. This prints its keys, never their values:
+
+~~~sh
+oc get secret "$BMC_SECRET" -n "$INV_NS" -o json | jq '{uid: .metadata.uid, created: .metadata.creationTimestamp, keys: (.data | keys)}'
+~~~
+
+**Expected:** created a moment ago, keys `password` and `username`. On `STOP`,
+fix the cause (for example a name that already exists) and run the block again
+with a new name. Never point the host file at a Secret this step did not create.
 
 No Secret YAML is shipped, so a template cannot be applied by mistake.
 
-**4. Fill the paused host file.** Fill
-[`02-baremetalhost-paused.yaml`](manifests/02-baremetalhost-paused.yaml) with
-`$HOST`, `$INV_NS`, `$INV`, the BMC address and the Secret name
-`$HOST-bmc-secret`. Keep the file outside the repository. It starts paused with
-cleaning disabled and certificate verification on, and holds the Secret's name,
-not its contents. Turning certificate verification off is a host-specific
-exception that needs written owner approval.
+**4. Fill the paused host file.** Make a private copy outside the checkout and
+fill the names you already set:
+
+~~~sh
+mkdir -p "$HOME/poc-private/case06" && chmod 700 "$HOME/poc-private" "$HOME/poc-private/case06"
+sed -e "s/REPLACE_HOST_NAME/$HOST/g" -e "s/REPLACE_INVENTORY_NAMESPACE/$INV_NS/g" \
+    -e "s/REPLACE_INFRAENV_NAME/$INV/g" -e "s/REPLACE_BMC_SECRET_NAME/$BMC_SECRET/g" \
+    manifests/02-baremetalhost-paused.yaml > "$HOME/poc-private/case06/bmh.yaml"
+~~~
+
+Then open `$HOME/poc-private/case06/bmh.yaml` in a text editor and fill the rest:
+
+| Placeholder | Value |
+| --- | --- |
+| `REPLACE_BMC_HOST` | The spare server's BMC address |
+| `REPLACE_SYSTEM_ID` | Its Redfish system ID (Dell iDRAC is usually `System.Embedded.1`; check, do not assume) |
+| `REPLACE_BOOT_NIC_MAC` | MAC address of the network card the server boots from |
+| `idrac-virtualmedia://` | Keep for Dell iDRAC; change to `redfish-virtualmedia://` for another Redfish BMC (runbook A2) |
+
+Check that nothing is left to fill:
+
+~~~sh
+grep -n '^[^#]*REPLACE_' "$HOME/poc-private/case06/bmh.yaml"; echo "grep exit $?"
+~~~
+
+**Expected:** only `grep exit 1` (nothing left to fill). Any listed line with `grep exit 0`
+means a placeholder remains; `grep exit 2` or an error means the file is missing or
+unreadable. In both cases, stop and fix the file.
+
+The file starts paused with cleaning disabled and certificate verification on.
+It holds the Secret's name, not its contents. Turning certificate verification
+off is a host-specific exception that needs written owner approval.
 
 Disabled cleaning does not protect other disks or boot records, and the
 Assisted Installer's disk preparation is separate. Only disposable disks may be
@@ -112,14 +170,28 @@ Return to the runbook (section B).
 
 ### Start discovery (runbook C1, after the upload)
 
-The runbook's C1 does the upload. Right after it, with `INV_NS` and `HOST`
-set, confirm the saved settings, then start discovery:
+The runbook's C1 does the upload. Right after it, with `INV_NS`, `INV`, `HOST`
+and `BMC_SECRET` set, review what the hub saved:
 
 ~~~sh
-oc get baremetalhost "$HOST" -n "$INV_NS" -o jsonpath='{.spec.automatedCleaningMode}{" "}{.metadata.annotations.baremetalhost\.metal3\.io/paused}{"\n"}'
-# Expected: disabled true   (if not, stop; do not start discovery)
-oc patch baremetalhost "$HOST" -n "$INV_NS" --type=merge -p '{"spec":{"online":true}}'
-oc annotate baremetalhost "$HOST" -n "$INV_NS" baremetalhost.metal3.io/paused-
+oc get baremetalhost "$HOST" -n "$INV_NS" -o jsonpath='inventory={.metadata.labels.infraenvs\.agent-install\.openshift\.io} secret={.spec.bmc.credentialsName} cleaning={.spec.automatedCleaningMode} paused={.metadata.annotations.baremetalhost\.metal3\.io/paused} online={.spec.online} skipCertCheck={.spec.bmc.disableCertificateVerification}{"\n"}'
+~~~
+
+**Expected:** `inventory=` your inventory, `secret=` your Secret, `cleaning=disabled`,
+`paused=true`, `online=false`, and `skipCertCheck=` empty or `false` (`true` only
+with the written exception). If anything differs or the command fails, stop here
+and ask the owner. Do not run the next block.
+
+When the review matches, start discovery. This block changes the host only if
+it is still paused with cleaning disabled:
+
+~~~sh
+if [ "$(oc get baremetalhost "$HOST" -n "$INV_NS" -o jsonpath='{.spec.automatedCleaningMode}/{.metadata.annotations.baremetalhost\.metal3\.io/paused}')" = "disabled/true" ]; then
+  oc patch baremetalhost "$HOST" -n "$INV_NS" --type=merge -p '{"spec":{"online":true}}' &&
+  oc annotate baremetalhost "$HOST" -n "$INV_NS" baremetalhost.metal3.io/paused-
+else
+  echo "STOP: the host is not paused with cleaning disabled. Nothing was changed."
+fi
 ~~~
 
 Then do the runbook's disk review (C2) before approving (C2) or assigning (C3).
@@ -154,7 +226,7 @@ Switch to the workload cluster context before running these.
 ~~~sh
 oc get nodes -l node-role.kubernetes.io/worker,'!node-role.kubernetes.io/control-plane'
 oc get node REPLACE_NEW_WORKER_NODE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'
-oc describe node REPLACE_NEW_WORKER_NODE | grep -A8 -i 'Allocatable'
+oc get node REPLACE_NEW_WORKER_NODE -o jsonpath='cpu={.status.allocatable.cpu} memory={.status.allocatable.memory}{"\n"}'
 oc get csr | grep -i pending      # only if the node stays pending
 ~~~
 
@@ -176,9 +248,10 @@ Stop and ask the owner before repeating an installation on a host.
 
 | Object | Action |
 | --- | --- |
-| `new-worker-check` pod | Delete (it may already be gone if Case 02 recovery removed it) |
-| `cim-expansion-check` project | Delete only if this run created it and it is empty |
+| `new-worker-check` pod in the project chosen in runbook C5 | Delete only if its UID matches the one recorded (it may already be gone if Case 02 recovery removed it) |
+| That check project | Delete only if this run created it and it holds nothing else |
 | New worker | Leave installed for the next agreed test |
 | Inventory InfraEnv | Leave unchanged |
 | BMC Secret referenced by the installed host | Keep; the host registration still needs it |
-| Private input files | Removed after Secret creation |
+| Private password files | Removed by the Secret step |
+| Filled host file in `$HOME/poc-private/case06` | Keep privately or delete with the owner |

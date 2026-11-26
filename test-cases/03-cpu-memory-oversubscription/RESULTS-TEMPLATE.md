@@ -34,7 +34,7 @@ Changes made to any VM or guest (tools added, anything else) and how they were u
 | Competitor count and how it was derived; approved ratio | |
 | HCO CPU allocation ratio / density setting (read-only) | |
 
-## Memory gate
+## Memory prerequisites
 
 | Prerequisite | Confirmed |
 | --- | --- |

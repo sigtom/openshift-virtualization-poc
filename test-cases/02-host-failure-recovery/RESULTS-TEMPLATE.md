@@ -8,6 +8,7 @@ OCP: ______   Virtualization: ______   FAR operator: ______   NHC operator: ____
 SOURCE: ______   TARGET: ______   VM (reused or disposable): ______
 Approved destination hosts: ______   Actual destination after recovery: ______
 Abort rule and escalation contact (test limits, not a recovery-time claim): ______
+BMC certificate trust: trusted by the FAR image / approved host-specific exception (reference): ______
 
 ## Final results (record separately)
 
@@ -51,8 +52,10 @@ Abort rule and escalation contact (test limits, not a recovery-time claim): ____
 
 | Captured ordering evidence | Value |
 | --- | --- |
-| Capture files saved privately (far, vmi, nodes) | |
-| Fence success time vs. new VMI creation time | |
+| Capture files saved privately (far, vmi, nodes, fault-start, readout) | |
+| Remediation UID for SOURCE (this run) / new VMI UID | |
+| Fence success time vs. new VMI creation time; readout result (ORDER OK / TIE / BLOCKED / FAIL) | |
+| If TIE: BMC log decides? (otherwise Blocked) | |
 | BMC event log shows SOURCE power-cycle (time) | |
 | Elapsed fault to VM Running (observed only) | |
 
@@ -60,6 +63,6 @@ Abort rule and escalation contact (test limits, not a recovery-time claim): ____
 
 | Item | Done |
 | --- | --- |
-| Health check paused after outcome; evidence kept | |
+| Health check paused after outcome (other owners' pause reasons kept); evidence kept | |
 | SOURCE uncordoned when healthy (if owned) | |
 | Owned VM, label, template, Secret removed; operators and shared objects kept | |

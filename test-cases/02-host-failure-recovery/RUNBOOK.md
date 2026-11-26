@@ -2,8 +2,11 @@
 
 > **Status: automatic recovery verified on 4.22.** Redfish fencing, a new VM
 > instance on a healthy destination, its guest login prompt and source-node
-> recovery were exercised. Cleanup was held for review. The 4.21 procedure was
+> recovery were exercised. After the latest run, cleanup was held for review; an
+> earlier rehearsal completed fixture cleanup. The 4.21 procedure was
 > documentation-reviewed; **vxflexos / Block / RWX provisioning remains unverified**.
+> The pause and evidence commands in this version were checked only against local
+> sample data.
 
 **Goal:** see a running VM interrupted and restarted on a separate healthy host
 (the destination) after the cluster automatically power-cycles the one approved worker
@@ -29,6 +32,15 @@ Use the web console or the CLI for each change, never both. Console menu names
 are version dependent; use **Search** or **Import YAML** if one differs. Command
 detail and safety reasoning are in the [administrator guide](ADMIN-GUIDE.md).
 
+Filled-in copies of the YAML files contain your node, BMC and key values. Keep
+them in a private folder outside the checkout, never in the repository. From
+this case's folder (`test-cases/02-host-failure-recovery`):
+
+~~~sh
+mkdir -p "$HOME/poc-private/case02" && chmod 700 "$HOME/poc-private" "$HOME/poc-private/case02"
+cp manifests/01-far-template.yaml manifests/02-nhc-paused.yaml manifests/03-recovery-vm.yaml "$HOME/poc-private/case02/"
+~~~
+
 <details>
 <summary>CLI: set values once</summary>
 
@@ -38,7 +50,7 @@ cd test-cases/02-host-failure-recovery
 # Reusing a VM? Replace both with that VM's own project and name.
 export VMNS=host-recovery-lab
 export VM=recovery-vm
-# Cleanup ownership: stays false unless you create the example VM in A3.
+# Created by this test? Stays false unless you create the example VM in A3.
 export CREATED_VM=false
 # Operator project (a different thing from the VM's project)
 export OPNS=openshift-workload-availability
@@ -68,7 +80,7 @@ record the actual destination afterwards. Do not pin the VM to SOURCE.
 **A1. Check for overlap and controller placement.** Confirm no other
 NodeHealthCheck, MachineHealthCheck or remediation can act on SOURCE or TARGET,
 and that the NHC and FAR controller pods run on nodes **other than SOURCE**.
-Commands: [ownership and controller checks](ADMIN-GUIDE.md#ownership-and-controller-checks).
+Commands: [overlap and controller checks](ADMIN-GUIDE.md#overlap-and-controller-checks).
 If anything overlaps, **stop**.
 
 **A2. Label SOURCE only.** Console: **Compute → Nodes → SOURCE → Details →
@@ -110,7 +122,7 @@ any item fails, do not edit the VM; pick another or use Option 2. Commands:
 *Option 2: create the disposable example.* Follow these steps in order.
 
 1. **Reset the values.** If you tried an existing VM first, put the defaults
-   back and keep ownership false:
+   back and keep `CREATED_VM` false:
    `export VMNS=host-recovery-lab VM=recovery-vm CREATED_VM=false`
 2. **Create or confirm the project `host-recovery-lab`.** Console: **Quick
    create (+) → Import YAML**, paste [`manifests/00-namespace.yaml`](manifests/00-namespace.yaml),
@@ -118,21 +130,24 @@ any item fails, do not edit the VM; pick another or use Option 2. Commands:
    project already exists, use it only if it is unused or yours.
 3. **Select the project.** Only now, in the console: **Virtualization →
    VirtualMachines**, then project **host-recovery-lab**.
-4. **Create the VM.** Fill [`manifests/03-recovery-vm.yaml`](manifests/03-recovery-vm.yaml).
+4. **Create the VM.** Fill your private copy of [`03-recovery-vm.yaml`](manifests/03-recovery-vm.yaml)
+   (the SSH public key).
    Click the arrow beside **Create → With YAML** (some versions say **From YAML**),
    click in the editor, press **Ctrl+A** and paste the filled file. Click **Create**.
    **Expected:** the VM appears and shows **Stopped**.
 
    ![recovery-vm on its Overview page with status Stopped (preparation view, not a test result)](images/01-new-vm-stopped.png)
 
-5. **Record ownership.** Only after step 4 succeeds: `export CREATED_VM=true`.
+5. **Record that you created it.** Only after step 4 succeeds: `export CREATED_VM=true`.
    Never set it for an existing VM.
 6. **Start it.** The example is Stopped on purpose (run strategy **Halted**).
    **Actions → Control → Start** changes the strategy to **Always**.
    **Expected:** the VM reaches **Running**.
 
 **A4. Create the BMC Secret (SOURCE only).** Private values, never in the
-repository. Follow these four steps **in this order**, in one terminal:
+repository. The FAR image must already trust the BMC's certificate; that is a
+prerequisite, not something this test changes. Follow these four steps **in
+this order**, in one terminal:
 
 1. [Private directory and CA](ADMIN-GUIDE.md#private-directory-and-ca): creates
    the private folder (`PRIV`) and copies in the BMC CA. Start here.
@@ -142,10 +157,11 @@ repository. Follow these four steps **in this order**, in one terminal:
 4. [BMC certificate trust](ADMIN-GUIDE.md#bmc-certificate-trust): needs step 3.
 
 **A5. Create the FAR template and the paused health check.** Fill the
-`REPLACE_*` values, then create
+`REPLACE_*` values in your private copies of
 [`01-far-template.yaml`](manifests/01-far-template.yaml) and
-[`02-nhc-paused.yaml`](manifests/02-nhc-paused.yaml) (console: **Quick create (+) →
-Import YAML**, paste each filled file, then **Create**). The health check uses
+[`02-nhc-paused.yaml`](manifests/02-nhc-paused.yaml), then create them (console:
+**Quick create (+) → Import YAML**, paste each filled file, then **Create**; CLI:
+[create](ADMIN-GUIDE.md#create)). The health check uses
 `maxUnhealthy: 1` (no `minHealthy`) and ships **Paused**. Optional server
 dry-runs: [dry-run](ADMIN-GUIDE.md#dry-run).
 
@@ -201,6 +217,8 @@ oc get vmi "$VM" -n "$VMNS" -o jsonpath='{.status.nodeName} {.metadata.uid}{"\n"
 oc get node "$SOURCE" -o jsonpath='{.status.nodeInfo.bootID}{"\n"}'
 ~~~
 
+The administrator also saves these values in the evidence folder in C4.
+
 ### C2. Cordon SOURCE
 
 A cordon, **not** a drain: the VM stays put but cannot return to SOURCE after
@@ -217,9 +235,13 @@ reason is present, stop and ask its owner. Do not clear someone else's hold.
 CLI alternative:
 
 ~~~sh
-oc patch nodehealthcheck case02-host-recovery --type=merge -p '{"spec":{"pauseRequests":null}}'
+oc patch nodehealthcheck case02-host-recovery --type=json -p '[{"op":"test","path":"/spec/pauseRequests","value":["case02-setup-hold"]},{"op":"remove","path":"/spec/pauseRequests"}]'
 oc get nodehealthcheck case02-host-recovery -o jsonpath='{.status.phase} observed={.status.observedNodes} healthy={.status.healthyNodes}{"\n"}'
 ~~~
+
+The patch removes the hold only if `case02-setup-hold` is the only reason. If it
+reports that the test failed, someone else added a reason: nothing changed.
+Stop and ask that owner.
 
 **Expected before any fault:** `Enabled`, **observed 1, healthy 1** (allow a
 minute). If not, pause again ([abort and pause](ADMIN-GUIDE.md#abort-and-pause))
@@ -230,21 +252,43 @@ and **do not run the fault**.
 ### C4. Start the evidence capture
 
 > **HANDOFF → administrator.** The remediation object is short-lived. Start the
-> [evidence capture](ADMIN-GUIDE.md#evidence-capture) first and keep it running
-> until D1.
+> [evidence capture](ADMIN-GUIDE.md#evidence-capture) first: three watch
+> terminals, each set up with the same evidence folder. Confirm all three
+> started before C5, and keep them running until D1.
 
 ### C5. Cause the fault
 
 > **HANDOFF → administrator, separate terminal.** No console equivalent. Do not
 > use `oc debug` for recovery afterwards.
 
+A new terminal needs its own values. Set SOURCE and the evidence folder from
+C4, then read the address. This first block changes nothing on the worker:
+
 ~~~sh
-ssh core@"$SOURCE_IP" 'sudo systemctl stop kubelet'
+export SOURCE='REPLACE_SOURCE_NODE' EVID='PASTE_EVIDENCE_FOLDER_FROM_C4'
+export SOURCE_IP="$(oc get node "$SOURCE" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
+echo "SOURCE=$SOURCE SOURCE_IP=$SOURCE_IP"
 ~~~
 
-Note the time. Do **not** reboot the node by hand and do not edit or delete the
-node, VMI or finalizers. Back-out is possible only **before** a remediation
-exists (start kubelet over SSH or the BMC console).
+Compare the node and address with your sheet. If they differ or the address is
+empty, stop. Only then run the fault block. It sends the SSH command only after
+it has saved a nonempty timestamp in the existing evidence folder:
+
+~~~sh
+if [ -n "$SOURCE_IP" ] && [ -d "$EVID" ] && [ -w "$EVID" ]; then
+  date -u +%FT%TZ > "$EVID/fault-start.txt" &&
+    test -s "$EVID/fault-start.txt" &&
+    cat "$EVID/fault-start.txt" &&
+    ssh core@"$SOURCE_IP" 'sudo systemctl stop kubelet'
+else
+  echo "STOP: source address or writable evidence folder is missing. Worker not touched."
+fi
+~~~
+
+On any error, stop and do not retry the fault. Use [abort and pause](ADMIN-GUIDE.md#abort-and-pause)
+if needed. Do **not** reboot the node by hand or edit or delete the node, VMI or
+finalizers. Back-out is possible only **before** a remediation exists (start
+kubelet over SSH or the BMC console).
 
 ### C6. Watch
 
@@ -266,8 +310,9 @@ Manual recovery is a **Fail**.
 
 If the temporary remediation has already disappeared, open **Home → Events**,
 select project **openshift-workload-availability**, and filter by **Fence agent**.
-Keep the administrator's captured remediation conditions to compare times; the
-event alone does not show the restart order. Events expire, so save them promptly.
+The event alone does not show the restart order; the administrator's
+[evidence readout](ADMIN-GUIDE.md#read-the-evidence) does. Events expire, so save
+them promptly.
 
 ![Retained event reports successful fencing after the temporary remediation object was removed automatically](images/07-fence-succeeded.png)
 
@@ -288,17 +333,18 @@ event alone does not show the restart order. Events expire, so save them promptl
 | VM state | Running, guest console works |
 | Optional note | `cat ~/case02-note.txt` still shows the text |
 | Duplicate | Only one VMI for the selected VM at any time |
-| Fence | Captured remediation shows fence success; BMC event log shows the power-cycle |
+| Fence | The [evidence readout](ADMIN-GUIDE.md#read-the-evidence) prints `ORDER OK` for this run's SOURCE remediation and the new VMI; BMC event log shows the power-cycle |
 | SOURCE boot ID | **Different** from before |
 
 - **Node recovery:** SOURCE Ready, remediation object gone, remediation and out-of-service taints cleared (D1).
-- **VM restart:** every row above passes. Missing fence evidence is **Blocked**, not Pass.
+- **VM restart:** every required row above passes (the note is checked only if you used it). Missing or ambiguous fence evidence is
+  **Blocked**, not Pass.
 - If you ran this after [Case 06](../06-cim-worker-expansion/RUNBOOK.md), do not
   collect expansion evidence now; it was recorded there (C6).
 
 ## D. Stop and clean up
 
-**Review first:** cleanup was held in the latest verification run. Complete
+**Review first:** cleanup was held after the latest verification run. Complete
 steps 1–3 to finish evidence capture and pause the policy safely. Keep SOURCE
 cordoned and retain the VM, disks and other test resources. Continue with
 steps 4–6 only when the owner is ready for cleanup.
@@ -309,18 +355,31 @@ steps 4–6 only when the owner is ready for cleanup.
    oc get fenceagentsremediation -n "$OPNS"
    oc get node "$SOURCE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status} {.spec.taints}{"\n"}'
    ~~~
-2. Stop the capture terminals (**Ctrl+C**). Keep the evidence privately.
+2. Stop the capture terminals (**Ctrl+C**), then run the
+   [evidence readout](ADMIN-GUIDE.md#read-the-evidence). Keep the evidence privately.
 3. **Pause** the health check again: **Actions → Pause NodeHealthCheck**, enter
-   `case02-setup-hold` as the reason, then **Pause**. CLI alternative:
+   `case02-setup-hold` as the reason, then **Pause**. Then open its **YAML** and
+   check that `pauseRequests` lists `case02-setup-hold` and any reason that was
+   there before. CLI alternative, which keeps other owners' reasons:
    ~~~sh
-   oc patch nodehealthcheck case02-host-recovery --type=merge -p '{"spec":{"pauseRequests":["case02-setup-hold"]}}'
+   NHC_JSON=$(oc get nodehealthcheck case02-host-recovery -o json)
+   PATCH=$(jq -c '[{op: "test", path: "/metadata/resourceVersion", value: .metadata.resourceVersion},
+     {op: "add", path: "/spec/pauseRequests", value: ((.spec.pauseRequests // []) | if any(.[]; . == "case02-setup-hold") then . else . + ["case02-setup-hold"] end)}]' <<<"$NHC_JSON")
+   oc patch nodehealthcheck case02-host-recovery --type=json -p "$PATCH"
+   oc get nodehealthcheck case02-host-recovery -o jsonpath='{.spec.pauseRequests}{"\n"}'
    ~~~
+   If the patch reports that the test failed, the health check changed after
+   you read it. Nothing changed: run the block again.
 4. Uncordon SOURCE when healthy (**Actions → Mark as
-   schedulable**, or `oc adm uncordon "$SOURCE"`), only if you own the cordon.
+   schedulable**, or `oc adm uncordon "$SOURCE"`), only if you set the cordon in C2
+   and nobody has cordoned it since.
    Keep the worker installed for the next agreed test.
 5. Remove only what you created: [cleanup](ADMIN-GUIDE.md#cleanup). For the
    disposable example (only if you created it), use **Actions → Control → Stop**,
    wait for **Stopped**, then **Actions → Delete**. Keep its test DataVolume
    selected in the confirmation and click **Delete**. A reused VM, its disks and
    its project stay intact; do not delete the project.
+
+   ![Earlier rehearsal: the test project's VM list is empty after the disposable example was deleted (the latest run kept the VM for review)](images/09-test-vm-removed.png)
+
 6. Fill in the [results sheet](RESULTS-TEMPLATE.md).

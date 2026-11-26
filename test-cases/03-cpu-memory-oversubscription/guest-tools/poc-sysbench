@@ -14,7 +14,7 @@ inrange "$warm" 0 1800 && inrange "$meas" 1 3600 && inrange "$thr" 1 256 || usag
 if ! command -v sysbench >/dev/null; then echo "BLOCKED: sysbench is not installed in this VM. Tell the administrator."; exit 2; fi
 here=$(cd "$(dirname "$0")" && pwd)
 stats() { if [ -f "$here/poc-stats" ]; then bash "$here/poc-stats"; else poc-stats; fi; }
-out=/var/tmp/poc-sysbench-$mode-$(date -u +%Y%m%dT%H%M%SZ).txt
+out=${POC_STATE_DIR:-/var/tmp}/poc-sysbench-$mode-$(date -u +%Y%m%dT%H%M%SZ).txt
 run() { # $1 = seconds, $2 = optional reporting option. --events=0 makes it time-limited only.
   if [ "$mode" = cpu ]; then
     timeout $(($1 + 60)) sysbench cpu --threads="$thr" --time="$1" --events=0 --percentile=95 $2 run
@@ -34,8 +34,9 @@ run() { # $1 = seconds, $2 = optional reporting option. --events=0 makes it time
   echo "== measure end $(date -u +%FT%TZ)"
   echo "== after"; stats
 } 2>&1 | tee "$out"
-rc=${PIPESTATUS[0]}
+st=("${PIPESTATUS[@]}"); rc=${st[0]}; trc=${st[1]}
 echo
 if [ "$rc" -ne 0 ]; then echo "RUN FAILED (exit $rc). Do not record these numbers. Log: $out"; exit "$rc"; fi
+if [ "$trc" -ne 0 ] || [ ! -s "$out" ]; then echo "RUN FAILED: the log could not be saved to $out. Do not record these numbers; tell the administrator."; exit 1; fi
 echo "Saved: $out"
 echo "Record: events per second (cpu) or MiB/sec (memory), latency avg / 95th percentile / max."

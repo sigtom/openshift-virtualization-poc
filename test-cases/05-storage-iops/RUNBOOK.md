@@ -5,8 +5,8 @@ latency in the guest and in the OpenShift console.
 
 The administrator [prepares and approves](ADMIN-GUIDE.md#prepare) first and gives you the
 [results sheet](RESULTS-TEMPLATE.md): VM, project, **directory to use**, graph links and
-times. Do not resize, restart, snapshot or migrate the VM. The bounded native
-workflow was rehearsed on OpenShift 4.22; target-cluster execution remains pending.
+times. Do not resize, restart, snapshot or migrate the VM. The reference fio workload
+and console metrics were rehearsed on OpenShift 4.22; tests on the target cluster are still pending.
 
 The pictures show the controls and reference output. Private values are covered
 with black boxes. Use the VMs, addresses, directory and times on **your results
@@ -57,11 +57,22 @@ and record **baseline end**.
 
 ## 4. Measure
 
-**Option A (no installation): the existing approved workload.** Run it exactly as the
-sheet says. Record start/end UTC. Skip to step 5.
+Your sheet says which option you use. Do only that option.
 
-**Option B: reference workload with `poc-fio`.** If `poc-fio` or `fio` is missing, the
-administrator supplies them ([how](ADMIN-GUIDE.md#tools)); no VM restart is needed.
+**Option A (no installation): the existing approved workload.** Run it exactly as the
+sheet says.
+
+1. Run `date -u +%FT%TZ` and record **workload start**.
+2. Start the workload as the sheet says, and let it run for the time on the sheet.
+3. When it ends, run `date -u +%FT%TZ` again and record **workload end**.
+4. Save the application's own results (its report or screen output) as the sheet says.
+
+Then skip to step 5. Option A does not use `poc-fio`.
+
+**Option B: reference workload with `poc-fio`.** If the sheet says the helper is in
+`~/poc-bin`, run `export PATH="$HOME/poc-bin:$PATH"` first after every login. If
+`poc-fio` or `fio` is missing, the administrator supplies them
+([how](ADMIN-GUIDE.md#tools)); no VM restart is needed.
 
 ```sh
 poc-fio prepare --dir /APPROVED/DIRECTORY
@@ -88,10 +99,16 @@ While `run` works and after it finishes, the console shows each repeat and the s
 
 ## 5. Read the console graphs
 
-For each measured window on your sheet, use the prepared graph links to note
-read/write IOPS, throughput and latency. Find the phase printed by `poc-fio`,
-then read the query at the evaluation time on your sheet. Its rate window sits
-inside that measured phase.
+Each prepared graph link shows one value per point in time, averaged over the last
+2 minutes (the *rate window*). For each measured window, read the value at the end
+of that window, so the 2 minutes lie inside it:
+
+- **Option A:** use your recorded workload start and end. If the workload ran for
+  less than 2 minutes (or the window on your sheet), tell the administrator; that
+  graph value is then **not available** for that run.
+- **Option B:** use each `repeat` line's start and end printed by `poc-fio`.
+
+Note read/write IOPS, throughput and latency from the three links.
 The VM **Metrics → Storage** cards are an optional live view. Their selected
 time range smooths the values, and their numerical display was not verified in
 the rehearsal. Use the prepared **Observe → Metrics** links for your recorded results. If a graph is missing,
@@ -107,14 +124,19 @@ background I/O, caches). Console latency is a virtual-disk average, not the gues
 
 Run `date -u +%FT%TZ` and record **recovery start**. Wait at least 2 minutes
 (or the time on your sheet), then record **recovery end** with the same command.
-Note whether the graph returns to baseline. If you used Option B:
+Note whether the graph returns to baseline.
+
+**Option A:** give the sheet, your UTC times and the application's own results to the
+administrator.
+
+**Option B:** remove the test file, then hand over:
 
 ```sh
 poc-fio cleanup
 ```
 
 **Expected:** `Removed the helper-created fixture. Result files were kept.` Give the sheet
-and the printed results folder name to the administrator.
+and the results folder name printed after `Saved:` to the administrator.
 
 ![Cleanup removes the fixture and keeps result files](images/09-cleanup.png)
 

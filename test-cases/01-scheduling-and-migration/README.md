@@ -3,8 +3,8 @@
 For VMware/vCenter teams learning OpenShift Virtualization.
 
 You will use prepared RHEL 9 VMs to try five things: approved-host placement,
-VM separation, an impossible rule, manual live migration, and automatic
-correction of a placement-rule violation.
+VM separation, an impossible rule, a live migration you request, and automatic
+correction of a placement-rule violation. The full result needs both moves.
 
 ## Choose your guide
 

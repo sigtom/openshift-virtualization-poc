@@ -24,7 +24,7 @@ test; recovery can remove that pod.
 | Check | Yes / No |
 | --- | --- |
 | Inventory healthy; workload cluster Ready | |
-| Spare host reachable by BMC; vendor-appropriate address form | |
+| Spare host reachable by BMC; vendor-appropriate address form; required networks and storage reachable | |
 | Owner approval and install disk recorded; all connected disks disposable | |
 | Before-counts recorded | |
 
@@ -40,15 +40,18 @@ test; recovery can remove that pod.
 
 | Value | Before | After |
 | --- | --- | --- |
-| Total Ready node count | | |
-| Dedicated worker node count | | |
-| Total allocatable CPU | | |
-| Total allocatable memory | | |
+| Total Ready node count (Nodes page) | | |
+| Ready dedicated worker count (CLI rows with READY True) | | |
+| Dedicated worker rows (name, CPU, memory) copied from the CLI | attach | attach |
+| New worker's allocatable CPU (cores) and memory (GiB) | n/a | |
+| Other workers' rows unchanged? | n/a | |
+
+Check pod project (chosen in C5): ______
 
 ## Cleanup
 
 | Item | Done |
 | --- | --- |
-| Check pod deleted; project deleted only if created for this run and empty | |
+| Check pod deleted after its UID matched; project deleted only if created for this run and empty | |
 | Worker left installed for the next agreed test | |
 | Inventory unchanged | |

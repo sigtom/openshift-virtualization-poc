@@ -2,7 +2,8 @@
 
 > **Status: results verified with a 4.21 hub and 4.22 workload cluster.**
 > Registration, installation, added Ready capacity and a Running check pod were
-> exercised. Cleanup was held for review. A 4.21 workload cluster was not tested;
+> exercised. After the latest run, cleanup was held for review; an earlier
+> rehearsal removed its check workload. A 4.21 workload cluster was not tested;
 > this remains manual expansion.
 
 **Goal:** use the existing Central Infrastructure Management (CIM) setup to add
@@ -42,6 +43,11 @@ This case starts from an **existing** environment; it does not set one up:
   data or another OS before discovery; choosing an install disk does not
   protect the others.
 - Owner approval to add, use and retain the spare worker.
+- Network and storage reach: the spare server can reach the hub for discovery,
+  and once installed it can reach the cluster network and the networks and
+  storage its VMs will use. An inventory that already works for the cluster's
+  hosts needs no extra network setup. If bonds, VLANs or static addresses are
+  needed, ask the network administrator before A4.
 
 **A1. Choose and record names.** Write on the results sheet: inventory name,
 workload cluster name, spare host name, BMC vendor, intended install disk.
@@ -62,9 +68,10 @@ repository or in the host file.
 **A3. Record the "before" size** on the **workload cluster**. Write down:
 
 - total Ready nodes: read from **Compute → Nodes**
-- dedicated worker nodes and allocatable CPU and memory: the Nodes table shows
-  usage and capacity, not allocatable, so hand the CLI block below to the
-  administrator
+- the dedicated worker nodes and each one's allocatable CPU and memory
+  (*allocatable* is what workloads may use after the system's own share). The
+  Nodes table shows usage and capacity, not allocatable, so the administrator
+  runs the CLI block below.
 
 Use this same CLI method for the "after" values in C4.
 
@@ -74,11 +81,18 @@ Use this same CLI method for the "after" values in C4.
 ~~~sh
 oc get nodes
 oc get nodes -l node-role.kubernetes.io/worker,'!node-role.kubernetes.io/control-plane' \
-  --no-headers | wc -l
-oc get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.allocatable.cpu,MEMORY:.status.allocatable.memory
+  -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,CPU:.status.allocatable.cpu,MEMORY:.status.allocatable.memory'
 ~~~
 
 </details>
+
+**Reading the numbers.** The second command lists one row per dedicated worker.
+Count the rows with `READY` `True`. CPU shows whole cores (`16`) or millicores
+(`15500m` = 15.5 cores; divide by 1000). Memory is usually in `Ki`: divide by
+1,048,576 for GiB (`65690624Ki` is about 62.6 GiB); `Mi` divides by 1024. Copy
+the rows to the results sheet. A total is just the sum of the rows; you do not
+need one to pass. What matters in C4 is one more Ready worker row, and the other
+rows unchanged.
 
 > **HANDOFF → administrator.** **A4. Prepare the host.** Open
 > [administrator preparation](ADMIN-GUIDE.md#administrator-preparation-runbook-a4).
@@ -133,8 +147,11 @@ The host shows **Pending** because the file starts paused. It can also show
 
 > **HANDOFF → administrator.** Right after the upload, run the commands in
 > [start discovery](ADMIN-GUIDE.md#start-discovery-runbook-c1-after-the-upload).
-> They check the saved settings and start discovery. If the warning stays or
-> registration does not start, the administrator checks CIM; do not rerun them.
+> The administrator first reviews what the hub saved (inventory, Secret name,
+> cleaning disabled, still paused). Only if it matches does the second block
+> start discovery; otherwise nothing is changed and you stop here. If the warning
+> stays or registration does not start, the administrator checks CIM; do not
+> rerun the blocks.
 
 **Expected:** the host appears on the **Hosts** tab, registers, and shows its
 discovered hardware. Wait until it shows as discovered or needing approval.
@@ -205,29 +222,65 @@ oc get nodes -l node-role.kubernetes.io/worker,'!node-role.kubernetes.io/control
 
 </details>
 
-**Expected:** total Ready nodes (Nodes page) and dedicated worker count are
-**before + 1**; allocatable CPU and memory are higher by that node's amount.
-Take the worker count and allocatable values with the **same CLI block as A3**
-(administrator), not from the Nodes table. If the node stays NotReady or pending, use
+**Expected:** total Ready nodes (Nodes page) and Ready dedicated workers are
+**before + 1**. The new worker's row adds its allocatable CPU and memory; the
+other rows are unchanged. Take the rows with the **same CLI block as A3**
+(administrator), not from the Nodes table, and record the new worker's own
+values on the sheet. If the node stays NotReady or pending, use
 [troubleshooting](ADMIN-GUIDE.md#troubleshooting) and stop; do not guess.
 
 ### C5. Run a simple workload on the new worker
 
-On the **workload cluster**, use a new project for the small check pod from
+On the **workload cluster**, create a new project and a small check pod from
 [`00-namespace.yaml`](manifests/00-namespace.yaml) and
-[`01-worker-check-pod.yaml`](manifests/01-worker-check-pod.yaml) (fill the new
-worker's node name; console: **Import YAML**). If the project already exists,
-stop and choose an unused name in both manifests; do not take over its contents.
+[`01-worker-check-pod.yaml`](manifests/01-worker-check-pod.yaml).
+
+1. Choose the project name: `cim-expansion-check`, or another name if that one
+   already exists. Write it on the results sheet. Every later step uses this name.
+2. Make filled copies outside the checkout (CLI below), or edit both files' text
+   before pasting them into **Quick create (+) → Import YAML**. Set the project
+   name in both files and the new worker's node name in the pod file.
+3. Create the project first, then the pod.
 
 ~~~sh
-oc create -f manifests/00-namespace.yaml
-oc create -f manifests/01-worker-check-pod.yaml
-oc get pod new-worker-check -n cim-expansion-check -o wide
+export CHECK_NS='cim-expansion-check'      # or the unused name you chose
+export NEW_NODE='REPLACE_NEW_WORKER_NODE'
+oc get namespace "$CHECK_NS"               # expected: NotFound
 ~~~
 
-**Expected:** the pod is **Running** on the new worker.
+If the project exists, choose another name, set `CHECK_NS` again and repeat the
+check. Do not reuse a project that holds anything else. When it says `NotFound`,
+create the project and the pod. Each line runs only if the one before it
+succeeded, so a failed step (for example *already exists*) creates nothing after it:
 
-![The non-root check pod is Running and its Node field identifies the selected worker](images/08-check-pod-running.png)
+~~~sh
+P="$HOME/poc-private/case06"
+mkdir -p "$P" &&
+  sed "s/cim-expansion-check/$CHECK_NS/" manifests/00-namespace.yaml > "$P/check-ns.yaml" &&
+  sed -e "s/cim-expansion-check/$CHECK_NS/" -e "s/REPLACE_NEW_WORKER_NODE/$NEW_NODE/" manifests/01-worker-check-pod.yaml > "$P/check-pod.yaml" &&
+  oc create -f "$P/check-ns.yaml" &&
+  oc create -f "$P/check-pod.yaml" &&
+  oc get pod new-worker-check -n "$CHECK_NS" -o jsonpath='{.metadata.uid} {.spec.nodeName} {.status.phase}{"\n"}' | tee "$P/check-pod.uid"
+~~~
+
+**Expected:** `namespace/... created`, `pod/new-worker-check created`, then one line
+with the pod's UID, node and phase. That line is saved so cleanup removes only this
+pod. If any command prints an error, stop: nothing after it ran. Pick another name
+if the project already existed.
+
+The phase can show `Pending` right after creation; that is normal. Wait for
+**Running** before recording the result (console: **Workloads → Pods**, select the
+project and refresh), or:
+
+~~~sh
+oc wait pod/new-worker-check -n "$CHECK_NS" --for=jsonpath='{.status.phase}'=Running --timeout=5m &&
+  oc get pod new-worker-check -n "$CHECK_NS" -o wide
+~~~
+
+**Expected:** the pod is **Running** on the new worker. If it does not reach Running
+within five minutes, stop and use [troubleshooting](ADMIN-GUIDE.md#troubleshooting).
+
+![The non-root check pod is Running; its node value is hidden here, so compare it with the new worker on your sheet](images/08-check-pod-running.png)
 
 ### C6. Record the expansion result now
 
@@ -257,13 +310,15 @@ re-collect expansion evidence afterwards.
 If the owner wants to review the retained test resources first, stop before
 step 1. Cleanup was held in the latest verification run.
 
-1. Delete the check workload (workload cluster). It may already be gone if
-   Case 02 recovery removed it; that is fine.
+1. Delete the check workload (workload cluster), in the project recorded in C5.
+   It may already be gone if Case 02 recovery removed it; that is fine. Set
+   `CHECK_NS` again if this is a new terminal.
    ~~~sh
-   oc delete pod new-worker-check -n cim-expansion-check
+   CUR=$(oc get pod new-worker-check -n "$CHECK_NS" -o jsonpath='{.metadata.uid}')
+   if [ -n "$CUR" ] && [ "$CUR" = "$(cut -d' ' -f1 "$HOME/poc-private/case06/check-pod.uid")" ]; then oc delete pod new-worker-check -n "$CHECK_NS"; else echo "Not deleting: the pod is gone or is not the one this run created."; fi
    ~~~
-   Delete the project only if this run created it and it contains no unrelated
-   resources. Otherwise leave the project in place.
+   Keep the project for review. Its administrator can remove it later after
+   checking its full contents. The worker and shared setup stay in place.
 2. Leave the worker installed and available for the next agreed test. Keep shared
    inventory and BMC registration intact.
 3. Complete the [results sheet](RESULTS-TEMPLATE.md).

@@ -1,4 +1,4 @@
-# 04 - OPTIONAL diagnostic: manual live migration of placement-01
+# 04 - Requested (manual) live migration of placement-01, walkthrough test 4
 #      (VMware analogue: a manual vMotion).
 #
 # NOT part of manifests/ on purpose: creating this object starts a migration

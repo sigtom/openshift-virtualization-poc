@@ -8,7 +8,12 @@ traffic to the same network link.
 [results sheet](RESULTS-TEMPLATE.md), tools and graphs. New test VMs are optional.
 Do not add network interfaces or change existing VM sizes for this walkthrough.
 
-The bounded UDP console walkthrough has been rehearsed on OpenShift 4.22.
+Your sheet gives each VM a role. The **measured server** and **measured client**
+carry the transfer you compare. Each **competitor pair** (a competitor server and a
+competitor client) adds traffic. Existing VMs keep their names, sizes and hosts; only
+the role is new. The server waits for a connection; the client starts the test.
+
+The UDP console walkthrough used fixed rates and was rehearsed on OpenShift 4.22.
 OpenShift 4.21 execution, full TCP measurements and actual physical-link
 oversubscription remain unverified. Complete your results sheet before calling a test passed. A short test does not establish a
 safe production oversubscription ratio.
@@ -41,6 +46,21 @@ Paste **one command at a time** into the guest console, press **Enter**, and wai
 its expected output before continuing. If the existing guest uses a different console,
 use the working console the administrator lists on your sheet.
 
+**Every time you log in to a guest**, run the lines your sheet lists before anything
+else. If the helpers are in `~/poc-bin`:
+
+```sh
+export PATH="$HOME/poc-bin:$PATH"
+command -v poc-iperf-server poc-iperf-run poc-net-load poc-net-info
+```
+
+**Expected:** four file paths. If the sheet also gives a **test address** for that VM
+(VMs with more than one network card), run `export POC_BIND=<that address>` too. The
+helpers then send and listen on that card; without it they use the card that holds the
+default route. A new login forgets both settings, so repeat them after every login. If
+a path is missing, stop and tell the administrator. VMs made from the prepared image
+already have the helpers.
+
 ## 2. Record a baseline
 
 In the **measured server’s** console:
@@ -49,7 +69,10 @@ In the **measured server’s** console:
 poc-iperf-server start 5201 2
 ```
 
-**Expected:** `2 listener(s)`. Leave this server running. Use the server address on
+**Expected:** `2 listener(s)`. If it says `Refusing`, an earlier test is still
+running. Stop and ask the administrator who owns it. Stop those listeners only
+if they belong to this test; otherwise use another approved VM. Leave the
+measured server running during the test. Use the server address on
 your sheet for the client commands; the listener can print a different guest bind address.
 
 ![Measured server listener confirmation; address hidden](images/02-measured-listeners.png)
@@ -62,6 +85,8 @@ poc-iperf-run tcp SERVER_IP 5201
 ```
 
 This warms up for 5 minutes and measures for 15 minutes. Repeat three times.
+A TCP transfer has no speed cap: it uses as much of the path as it can get. That is
+itself load on the link, so the administrator includes it in the approved load plan.
 For shorter agreed runs, use the same arguments throughout, for example
 `poc-iperf-run tcp SERVER_IP 5201 60 300`.
 
@@ -76,7 +101,7 @@ it may be answered by the pod network rather than the guest.
 
 For each load level on the sheet, use the agreed protocol in both measured and
 competitor commands (`tcp`, `tcp-rev` or `udp`). The screenshots illustrate the
-bounded UDP alternative in **Other agreed measurements** below.
+fixed-rate UDP alternative in **Other agreed measurements** below.
 
 For each load level:
 
@@ -135,7 +160,7 @@ test is only a control and does not demonstrate physical uplink oversubscription
 
 ## Other agreed measurements
 
-To test the reverse direction, repeat steps 2–4 using `tcp-rev` instead of `tcp`.
+To test the reverse direction (the server sends), repeat steps 2–4 using `tcp-rev` instead of `tcp`.
 For UDP, repeat them using `udp` and port `5202`, with an agreed fixed rate:
 
 ```sh
