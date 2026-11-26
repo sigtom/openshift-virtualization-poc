@@ -33,9 +33,9 @@ the administrator's known fingerprint before accepting it.
   dedicated label `host-recovery-lab.example.com/source=case02` (SOURCE only).
 - TARGET is a separate healthy virtualization host **outside** the selector. It
   is never labelled, fenced, faulted, or given a BMC credential here.
-- TARGET is a readiness candidate. The scheduler can choose another approved
-  healthy destination with shared storage access and capacity. Record the
-  actual destination; it must differ from SOURCE and stay outside the selector.
+- TARGET is the healthy destination checked ahead of time. The scheduler can
+  pick another approved healthy host with shared storage access and capacity.
+  Record the actual destination; it must differ from SOURCE and stay outside the selector.
 - `maxUnhealthy: 1` (accepted by server dry-run; the Red Hat 4.21
   Workload Availability documentation describes it). It is mutually exclusive
   with `minHealthy`, which is not set. It is safe only because exactly one node
@@ -188,7 +188,7 @@ fi
 **Critical gate:** the Redfish `UUID` (and a serial or asset tag you trust)
 matches the `systemUUID` of SOURCE, and the Systems id is the one in the
 template. A swapped mapping power-cycles the wrong server. If it cannot be
-matched, confirm by a second independent method or **stop**.
+matched, confirm another way or **stop**.
 
 ### Fencing Secret
 
@@ -292,8 +292,8 @@ oc get vmi -n "$VMNS" --field-selector metadata.name="$VM" --watch --output-watc
 oc get nodes -l host-recovery-lab.example.com/source=case02 --watch --output-watch-events -o json > "$EVID/nodes.json"
 ~~~
 
-Corroborate with the BMC event/lifecycle log (power-cycle time) and SOURCE's
-node boot ID. Fence-before-restart ordering: the remediation's
+Also check the BMC event/lifecycle log (power-cycle time) and SOURCE's node boot
+ID. Fence-before-restart order: the remediation's
 `FenceAgentActionSucceeded=True` `lastTransitionTime` should be earlier than the
 new VMI's `creationTimestamp`.
 

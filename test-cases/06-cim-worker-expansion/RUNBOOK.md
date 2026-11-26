@@ -15,7 +15,9 @@ automatic recovery test.
 policy- or load-triggered autoscaling, and nothing here shows the cluster
 growing by itself.
 
-Flow: **A. Prepare → B. Readiness check (once) → C. Test and results → D. Stop and clean up.**
+Flow: **A. Prepare → B. Readiness check → C. Test and results → D. Stop and clean up.**
+Terms: **BMC** is the server's remote-management controller; the **inventory**
+is the host-inventory InfraEnv on the hub.
 
 Official reference: [Red Hat Advanced Cluster Management 2.16 — Clusters](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.16/html-single/clusters/index)
 (host inventory and adding hosts to a cluster). If this runbook and the docs or
@@ -32,23 +34,21 @@ This case starts from an **existing** environment; it does not set one up:
 
 - A hub with ACM/MCE and CIM already configured, and a managed workload cluster
   already imported.
-- A **host-inventory InfraEnv** (the "inventory") that you reuse **unchanged**.
-  It must be unassigned to a cluster (`clusterRef` absent), with its InfraEnv
-  automatic approval setting off. BMC-discovered hosts can still be approved
-  automatically; keep them unassigned until you review their disks.
-  If the existing installation inventory is
-  already assigned, create a separate inventory for this test; leave it intact.
-- One **spare approved physical server** with BMC access. Every connected disk
-  must be disposable. Disconnect disks and unpresent SAN LUNs containing data
-  or another OS before discovery; selecting an install disk is not protection.
+- A **host inventory** you can reuse unchanged: not assigned to a cluster and
+  with automatic approval off. If it is assigned, the administrator makes a
+  separate one (A4).
+- One **spare approved physical server** with BMC access. **Only disposable
+  disks may be connected.** Disconnect disks and unpresent SAN LUNs that hold
+  data or another OS before discovery; choosing an install disk does not
+  protect the others.
 - Owner approval to add, use and retain the spare worker.
 
 **A1. Choose and record names.** Write on the results sheet: inventory name,
 workload cluster name, spare host name, BMC vendor, intended install disk.
 
-**A2. Choose the BMC address format.** It must match the vendor. Do **not** use
-the generic `redfish-virtualmedia` form for a Dell server; Dell iDRAC uses
-`idrac-virtualmedia`. Typical shapes (confirm in the docs and with the vendor):
+**A2. Choose the BMC address format.** It must match the vendor. A Dell server
+uses `idrac-virtualmedia`, not the generic `redfish-virtualmedia`. Typical
+shapes (confirm in the docs and with the vendor):
 
 | Vendor | BMC address form |
 | --- | --- |
@@ -56,12 +56,17 @@ the generic `redfish-virtualmedia` form for a Dell server; Dell iDRAC uses
 | Other Redfish BMC | `redfish-virtualmedia://<bmc-host>/redfish/v1/Systems/<system-id>` |
 
 Use the host's own Systems id; do not assume it. Have the BMC username and
-password ready privately. Use them to create the private Secret in A4; never
-write them in files in this repository or in the host upload file.
+password ready privately for the administrator (A4). They never go in this
+repository or in the host file.
 
-**A3. Record the "before" size** on the **workload cluster**: **Compute → Nodes**,
-total Ready nodes, dedicated worker nodes, and allocatable CPU and memory
-(CLI below).
+**A3. Record the "before" size** on the **workload cluster**. Write down:
+
+- total Ready nodes: read from **Compute → Nodes**
+- dedicated worker nodes and allocatable CPU and memory: the Nodes table shows
+  usage and capacity, not allocatable, so hand the CLI block below to the
+  administrator
+
+Use this same CLI method for the "after" values in C4.
 
 <details>
 <summary>CLI (workload cluster)</summary>
@@ -75,23 +80,23 @@ oc get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.allocatable.cpu,M
 
 </details>
 
-**A4. Prepare the host file (no upload yet).** Follow the
-[host-file preparation steps](ADMIN-GUIDE.md#prepare-the-paused-host-file) to
-create a private BMC Secret and fill the paused BareMetalHost template. Keep
-the filled file outside the repository. The file references the Secret by name.
-**Stop at the filled file.** Do not upload it or start discovery now; both
-happen once, in C1, after the readiness check.
+> **HANDOFF → administrator.** **A4. Prepare the host.** Open
+> [administrator preparation](ADMIN-GUIDE.md#administrator-preparation-runbook-a4).
+> It is self-contained: it sets the inventory and host names, picks (or creates)
+> the inventory, creates the private BMC Secret and fills the paused host file.
+> Come back here with a usable inventory, the Secret and the filled file kept
+> outside the repository. Nothing is uploaded and discovery is not started yet.
 
-## B. Readiness check (one check, all must be yes)
+## B. Readiness check (all must be yes)
 
-Run once before adding the host. Any **no** means **stop**.
+Run before adding the host. Any **no** means **stop**.
 
 | # | Must be true | Where to look |
 | --- | --- | --- |
 | 1 | The inventory exists and is healthy (hub) | **Fleet Management → Infrastructure → Host inventory** |
 | 1a | Inventory is unassigned; its InfraEnv automatic approval setting is off | Administrator checks the InfraEnv YAML |
 | 2 | The workload cluster is **Ready** (hub) | **Fleet Management → Infrastructure → Clusters** |
-| 3 | The spare's BMC is powered and reachable; the host is not already in the inventory | Host inventory **Hosts** tab; server may stay off |
+| 3 | The spare's BMC is powered and reachable. **If the host is already in the inventory, stop** and ask the administrator; do not add it again | Host inventory **Hosts** tab; server may stay off |
 | 4 | The BMC address uses the vendor-appropriate form (A2) | Your notes |
 | 5 | Owner approval and install disk recorded; all connected disks disposable | Results sheet |
 | 6 | Before-count of workers and capacity is recorded (A3) | Results sheet |
@@ -114,31 +119,28 @@ oc get managedcluster
 
 ### C1. Register the host
 
-Do this once, only after section B passed. Use the host file prepared in A4.
-Cleaning starts disabled and certificate verification stays enabled. The file
-contains the Secret's name, not its username or password.
+Do this only after section B passed, using the host file from A4. Upload it
+once; if anything looks wrong, ask the administrator instead of uploading again.
 
-On the **hub**: **Fleet Management → Infrastructure → Host inventory →** select
-your inventory **→ Add hosts → By uploading a YAML → Open file**. Choose the
-filled host file, then click **Upload**. Open the **Hosts** tab.
+1. On the **hub**: **Fleet Management → Infrastructure → Host inventory →**
+   select your inventory **→ Add hosts → By uploading a YAML → Open file**.
+2. Choose the filled host file and click **Upload**. Open the **Hosts** tab.
 
 ![Native console upload of a BareMetalHost definition](images/02-upload-bmh.png)
 
-The host initially shows **Pending** because the file starts paused. A new
-paused host can also show **Metal3 operator is not configured** until discovery
-starts. **Right after this one upload**, run the saved-settings check and start
-discovery once, with the commands in
-[upload and start discovery](ADMIN-GUIDE.md#upload-the-host-and-start-discovery-runbook-c1-once)
-(step 2 there; the upload step is the one you just did, so do not repeat it).
-Then wait for the host's discovered hardware to appear.
-If the warning remains or registration does not start, ask the administrator to
-check CIM; do not upload the host again or rerun the start commands.
-If it boots an old operating system, stop and use the BMC's one-time **UEFI
-virtual optical/CD** boot selection; do not start an installation on that disk.
+The host shows **Pending** because the file starts paused. It can also show
+**Metal3 operator is not configured** until discovery starts.
 
-**Expected:** the host appears on the inventory's **Hosts** tab and moves
-through registration and discovery. This step only **registers** the host.
-Wait until it shows as discovered or needing approval.
+> **HANDOFF → administrator.** Right after the upload, run the commands in
+> [start discovery](ADMIN-GUIDE.md#start-discovery-runbook-c1-after-the-upload).
+> They check the saved settings and start discovery. If the warning stays or
+> registration does not start, the administrator checks CIM; do not rerun them.
+
+**Expected:** the host appears on the **Hosts** tab, registers, and shows its
+discovered hardware. Wait until it shows as discovered or needing approval.
+This step only registers the host. If the server boots an old operating system,
+stop and pick the BMC's one-time **UEFI virtual optical/CD** boot; do not start
+an installation on that disk.
 
 ### C2. Review the disks and approve the discovered host
 
@@ -148,10 +150,10 @@ the hostname opens a rename dialog, so use the arrow for hardware details.
 
 ![Discovered disks: review the intended installation disk; serial numbers are redacted](images/09-discovered-disks.png)
 
-BMC-discovered hosts can already be approved automatically. An **Available**
-host with **Actions → Approve** disabled needs no extra approval click. If
-approval is offered, review the hardware first, select the host and choose
-**Actions → Approve**. Keep the host **unassigned** until C3's disk review.
+A host found by BMC may already be approved. If it shows **Available** and
+**Actions → Approve** is disabled, no click is needed. If approval is offered,
+select the host and choose **Actions → Approve** after the review. Keep the host
+**unassigned** until the C3 disk check.
 
 **Expected:** the host shows approved/available and is not yet in any cluster.
 
@@ -203,8 +205,10 @@ oc get nodes -l node-role.kubernetes.io/worker,'!node-role.kubernetes.io/control
 
 </details>
 
-**Expected:** total Ready nodes and dedicated worker count are **before + 1**; allocatable CPU and memory
-are higher by that node's amount. If the node stays NotReady or pending, use
+**Expected:** total Ready nodes (Nodes page) and dedicated worker count are
+**before + 1**; allocatable CPU and memory are higher by that node's amount.
+Take the worker count and allocatable values with the **same CLI block as A3**
+(administrator), not from the Nodes table. If the node stays NotReady or pending, use
 [troubleshooting](ADMIN-GUIDE.md#troubleshooting) and stop; do not guess.
 
 ### C5. Run a simple workload on the new worker
@@ -225,26 +229,36 @@ oc get pod new-worker-check -n cim-expansion-check -o wide
 
 ![The non-root check pod is Running and its Node field identifies the selected worker](images/08-check-pod-running.png)
 
-### C6. Optional: automatic recovery of the new worker
+### C6. Record the expansion result now
 
-You may now run [Case 02](../02-host-failure-recovery/RUNBOOK.md)
+Do this **before** any recovery test. Recovery can remove the check pod, and
+the Running pod you just saw is still valid evidence.
+
+On the [results sheet](RESULTS-TEMPLATE.md), record **Pass**, **Fail**,
+**Blocked** or **Not run**. **Pass** needs all of these:
+
+- host registered, approved and assigned as a worker
+- node Ready
+- worker count and capacity higher than before (A3)
+- check pod Running on the new worker
+
+Save the pod's screenshot or output with the sheet.
+
+### C7. Optional: automatic recovery of the new worker
+
+Only after C6 is recorded, you may run [Case 02](../02-host-failure-recovery/RUNBOOK.md)
 with the new worker as **SOURCE** and a separate healthy host as **TARGET**. It
 power-cycles the new worker through its BMC and restarts a test VM elsewhere.
-It has its own approvals, readiness check and results; record them there.
-
-### C7. Record the result
-
-Results are **Pass**, **Fail**, **Blocked** or **Not run** on the
-[results sheet](RESULTS-TEMPLATE.md). Pass for expansion requires: host
-registered, approved and assigned as worker, node Ready, worker count and
-capacity increased, and the check pod Running on it.
+It has its own approvals, readiness check and results; record them there. Do not
+re-collect expansion evidence afterwards.
 
 ## D. Stop and clean up
 
 If the owner wants to review the retained test resources first, stop before
 step 1. Cleanup was held in the latest verification run.
 
-1. Delete the check workload (workload cluster):
+1. Delete the check workload (workload cluster). It may already be gone if
+   Case 02 recovery removed it; that is fine.
    ~~~sh
    oc delete pod new-worker-check -n cim-expansion-check
    ~~~

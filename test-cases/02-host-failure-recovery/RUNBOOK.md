@@ -10,14 +10,20 @@
 (SOURCE) through its BMC (Redfish).
 
 **What this is not:** not live migration, not zero downtime, not proof of full
-hardware failure (the fault is a stopped kubelet). **Node recovery** (SOURCE is
-fenced and returns Ready) and **VM restart** (a new VMI starts on another healthy host) are
-judged separately. No outage time is promised.
+hardware failure (the fault is a stopped kubelet, the node's agent). No outage
+time is promised. Two results are recorded separately:
+
+- **Node recovery:** SOURCE is power-cycled and returns Ready.
+- **VM restart:** a new VM instance (VMI) starts on another healthy host.
 
 **This really power-cycles a server.** Everything is source-only: the health
-check selects exactly one node, and TARGET is never fenced or faulted.
+check selects exactly one node, and TARGET is never power-cycled or faulted.
 
-Flow: **A. Prepare → B. Readiness check (once) → C. Test and results → D. Stop and clean up.**
+Terms: **BMC** is the server's remote-management controller; **FAR** is the
+Fence Agents Remediation operator (it power-cycles the node); **NHC** is the Node
+Health Check operator (it decides when to ask FAR); **PVC** is a persistent disk claim.
+
+Flow: **A. Prepare → B. Readiness check → C. Test and results → D. Stop and clean up.**
 
 Use the web console or the CLI for each change, never both. Console menu names
 are version dependent; use **Search** or **Import YAML** if one differs. Command
@@ -45,17 +51,19 @@ export SOURCE_IP="$(oc get node "$SOURCE" -o jsonpath='{.status.addresses[?(@.ty
 
 ## A. Prepare
 
-You need: the approved **SOURCE** worker (not control plane, everything on it
-disposable), a separate healthy **TARGET** virtualization host with spare
-capacity, shared **vxflexos / Block / ReadWriteMany** storage reachable from both,
-the installed Fence Agents Remediation and Node Health Check operators, SOURCE's
-BMC address and an account for it, and a written **abort rule and escalation
-contact** from the owner (write them on the results sheet).
+You need:
 
-Record the approved destination hosts with shared storage access and enough
-surviving capacity. **TARGET** is one suitable candidate for the readiness
-check. The scheduler may choose another approved healthy host; record the
-actual destination after recovery. Do not pin the VM to SOURCE.
+- the approved **SOURCE** worker (not control plane; everything on it disposable)
+- a separate healthy host, **TARGET**, with spare capacity
+- shared **vxflexos / Block / ReadWriteMany** storage reachable from both
+- the FAR and NHC operators installed
+- SOURCE's BMC address and an account for it
+- a written **abort rule and escalation contact** from the owner (put them on the
+  results sheet)
+
+TARGET is the healthy destination we check ahead of time. The scheduler may
+pick another approved healthy host with the same storage access and capacity;
+record the actual destination afterwards. Do not pin the VM to SOURCE.
 
 **A1. Check for overlap and controller placement.** Confirm no other
 NodeHealthCheck, MachineHealthCheck or remediation can act on SOURCE or TARGET,
@@ -80,40 +88,48 @@ oc get nodes -l host-recovery-lab.example.com/source=case02 -o name   # exactly 
 
 </details>
 
-**A3. Choose the VM.** Set `VMNS` (the VM's project) and `VM` (its name) in the
-CLI block above. The defaults are the new example. Every later check, watch and
-cleanup uses only that one VM; the operator project `OPNS` is separate.
+**A3. Choose the VM.** Every later check, watch and cleanup uses only this one
+VM. The operator project `OPNS` is separate. Decide first:
 
-*Reuse an existing approved VM only if all of these are already true, and leave
-it unchanged:* it runs on SOURCE; every persistent, PVC-backed VM disk is
-**vxflexos / Block / ReadWriteMany** (console: **VM → Configuration → Storage**)
-so another host can attach it (the small cloud-init disk is not a PVC and is
-allowed); and its
-run strategy restarts it automatically (**Always** or **RerunOnFailure**).
-**Manual** never restarts it, so it is not eligible. If the VM only shows the older
-`running` setting, do not assume it qualifies; pick another VM or the example.
-If any item fails, choose a different VM or use the disposable example. Do not
-edit an otherwise suitable VM to make it fit. Commands:
+*Option 1: use an existing VM.* Use it only if **all** of these are already
+true, and leave it unchanged:
+
+- It is Running on SOURCE.
+- Every persistent (PVC) disk is **vxflexos / Block / ReadWriteMany**, so another
+  host can attach it. Console: **VM → Configuration → Storage**. The small
+  cloud-init disk is not a PVC and is fine.
+- Its run strategy restarts it automatically: **Always** or **RerunOnFailure**.
+  **Manual** never restarts it, so that VM is not eligible. If it only shows
+  the older `running` setting, ask the administrator to confirm its restart
+  behavior, or choose another VM or the example.
+
+If it passes, set `VMNS` and `VM` in the CLI block to its project and name. If
+any item fails, do not edit the VM; pick another or use Option 2. Commands:
 [selected VM checks](ADMIN-GUIDE.md#selected-vm-checks).
 
-*Otherwise create the disposable example.* If you set `VMNS`/`VM` for an
-existing VM and it failed, first reset them to the example's names
-(`export VMNS=host-recovery-lab VM=recovery-vm`) and keep `CREATED_VM=false`. Then
-use the console **Virtualization → VirtualMachines**, select project
-**host-recovery-lab**, then click the arrow beside **Create → With YAML** (some
-versions say **From YAML**). Click inside the editor, press **Ctrl+A** to select
-all the sample YAML, and paste the filled
-[`manifests/03-recovery-vm.yaml`](manifests/03-recovery-vm.yaml) (project
-**host-recovery-lab**, created from
-[`00-namespace.yaml`](manifests/00-namespace.yaml) if missing). Click **Create**
-and wait for **Stopped**. Only after this creation succeeds, record ownership:
-`export CREATED_VM=true`. Never set it for a reused VM.
+*Option 2: create the disposable example.* Follow these steps in order.
 
-![recovery-vm on its Overview page with status Stopped (preparation view, not a test result)](images/01-new-vm-stopped.png)
+1. **Reset the values.** If you tried an existing VM first, put the defaults
+   back and keep ownership false:
+   `export VMNS=host-recovery-lab VM=recovery-vm CREATED_VM=false`
+2. **Create or confirm the project `host-recovery-lab`.** Console: **Quick
+   create (+) → Import YAML**, paste [`manifests/00-namespace.yaml`](manifests/00-namespace.yaml),
+   then **Create**. CLI: `oc create -f manifests/00-namespace.yaml`. If the
+   project already exists, use it only if it is unused or yours.
+3. **Select the project.** Only now, in the console: **Virtualization →
+   VirtualMachines**, then project **host-recovery-lab**.
+4. **Create the VM.** Fill [`manifests/03-recovery-vm.yaml`](manifests/03-recovery-vm.yaml).
+   Click the arrow beside **Create → With YAML** (some versions say **From YAML**),
+   click in the editor, press **Ctrl+A** and paste the filled file. Click **Create**.
+   **Expected:** the VM appears and shows **Stopped**.
 
-The example is intentionally stopped (run strategy **Halted**). Start it
-(**Actions → Control → Start**), which sets the run strategy to **Always**, and wait
-for **Running**. A reused VM must already be Running with an eligible strategy.
+   ![recovery-vm on its Overview page with status Stopped (preparation view, not a test result)](images/01-new-vm-stopped.png)
+
+5. **Record ownership.** Only after step 4 succeeds: `export CREATED_VM=true`.
+   Never set it for an existing VM.
+6. **Start it.** The example is Stopped on purpose (run strategy **Halted**).
+   **Actions → Control → Start** changes the strategy to **Always**.
+   **Expected:** the VM reaches **Running**.
 
 **A4. Create the BMC Secret (SOURCE only).** Private values, never in the
 repository. Follow these four steps **in this order**, in one terminal:
@@ -138,9 +154,9 @@ dry-runs: [dry-run](ADMIN-GUIDE.md#dry-run).
 While paused, **Observed nodes** and **Healthy nodes** show zero. Check the
 one-node count after activating it in C3.
 
-## B. Readiness check (one check, all must be yes)
+## B. Readiness check (all must be yes)
 
-Run this once, with the health check still paused. Any **no** means **stop**.
+Run this with the health check still paused. Any **no** means **stop**.
 
 | # | Must be true | Where to look |
 | --- | --- | --- |
@@ -250,8 +266,8 @@ Manual recovery is a **Fail**.
 
 If the temporary remediation has already disappeared, open **Home → Events**,
 select project **openshift-workload-availability**, and filter by **Fence agent**.
-Keep the administrator's captured remediation conditions for the timing comparison;
-the event alone does not prove the restart order. Events expire, so save them promptly.
+Keep the administrator's captured remediation conditions to compare times; the
+event alone does not show the restart order. Events expire, so save them promptly.
 
 ![Retained event reports successful fencing after the temporary remediation object was removed automatically](images/07-fence-succeeded.png)
 
@@ -263,7 +279,7 @@ the event alone does not prove the restart order. Events expire, so save them pr
 
 ![Health check returns to one observed and one healthy node](images/12-healthcheck-healthy.png)
 
-### C7. Record "after" evidence and judge two results
+### C7. Record "after" evidence and the two results
 
 | Check | Pass when |
 | --- | --- |
@@ -277,6 +293,8 @@ the event alone does not prove the restart order. Events expire, so save them pr
 
 - **Node recovery:** SOURCE Ready, remediation object gone, remediation and out-of-service taints cleared (D1).
 - **VM restart:** every row above passes. Missing fence evidence is **Blocked**, not Pass.
+- If you ran this after [Case 06](../06-cim-worker-expansion/RUNBOOK.md), do not
+  collect expansion evidence now; it was recorded there (C6).
 
 ## D. Stop and clean up
 

@@ -13,13 +13,11 @@ Official reference: [ACM 2.16 — Clusters](https://docs.redhat.com/en/documenta
 Installing ACM/MCE and importing the workload cluster are pre-existing
 prerequisites and are out of scope here.
 
-## Prepare
+Terms: **CIM** is Central Infrastructure Management. **BMC** is the server's
+remote-management controller. An **InfraEnv** (the "inventory") is the
+host-inventory object on the hub.
 
-~~~sh
-export INV_NS='REPLACE_INVENTORY_NAMESPACE'     # namespace of the host-inventory InfraEnv (hub)
-export INV='REPLACE_INFRAENV_NAME'
-export HOST='REPLACE_SPARE_HOST_NAME'
-~~~
+## Prepare
 
 ### Requirements
 
@@ -32,50 +30,57 @@ export HOST='REPLACE_SPARE_HOST_NAME'
   OS before discovery. The install disk will be overwritten.
 - A BMC address with the vendor-appropriate URI. Dell iDRAC uses
   `idrac-virtualmedia://`, not the generic `redfish-virtualmedia://`.
-- BMC credentials stay private (see below). No password goes in this repository.
+- BMC credentials stay private. No password goes in this repository.
 
-### Read-only hub checks
+### Administrator preparation (runbook A4)
+
+This is the one entry point for preparation. Work on the **hub**, in one
+terminal, and do the four steps in order. You hand back a usable inventory, a
+private BMC Secret and a filled, paused host file. Do not upload the file or
+start discovery here.
+
+**1. Set the values** (names from runbook A1):
 
 ~~~sh
-oc get infraenv "$INV" -n "$INV_NS" -o jsonpath='{.metadata.name}{"\n"}'
+export INV_NS='REPLACE_INVENTORY_NAMESPACE'     # namespace of the host-inventory InfraEnv
+export INV='REPLACE_INFRAENV_NAME'
+export HOST='REPLACE_SPARE_HOST_NAME'
+~~~
+
+**2. Choose the inventory.** Reuse an existing one, unchanged, if it passes
+this read-only check: `clusterRef` empty and `autoApprove` not `true`.
+
+~~~sh
+oc get infraenv "$INV" -n "$INV_NS" -o jsonpath='{.metadata.name}{" clusterRef="}{.spec.clusterRef}{" autoApprove="}{.spec.agentApproval.autoApprove}{"\n"}'
 oc get agent -n "$INV_NS" -o custom-columns=NAME:.metadata.name,APPROVED:.spec.approved,ROLE:.spec.role,CLUSTER:.spec.clusterDeploymentName.name,STAGE:.status.progress.currentStage
 oc get baremetalhost -n "$INV_NS"
 ~~~
 
-### Create a separate inventory, only if needed
-
-Reuse an existing inventory unchanged if it is unassigned and its InfraEnv
-automatic approval setting is off. BMC-discovered hosts can still be approved
-automatically; keep them unassigned until you review the disks. An installation
-inventory with `spec.clusterRef` already set is not suitable for these steps.
+Hosts found by BMC can still be approved automatically, so keep the new host
+unassigned until the disk review. If `clusterRef` is set the inventory is not
+suitable. Create a separate one (optional):
 
 1. In **Host inventory**, note the namespace and approved pull-Secret name of
-   the existing inventory. Do not display or copy its Secret contents.
+   the existing inventory. Do not display or copy the Secret's contents.
 2. Fill [`03-unassigned-inventory.yaml`](manifests/03-unassigned-inventory.yaml)
    with a new inventory name, that namespace, the existing pull-Secret name and
    your SSH public key. Match the OpenShift version to the workload cluster.
 3. The example uses DHCP. For bonds, VLANs or static IPs, have the network
-   administrator supply a host-specific NMStateConfig and label it to match the
-   template's selector. Include the storage network if the worker will run VMs.
-   Existing network configuration stays unchanged.
-4. Use **Quick create (+) → Import YAML**, choose the inventory project, paste
-   the completed definition and click **Create**. Alternatively:
+   administrator supply a host-specific NMStateConfig labelled to match the
+   template's selector, including the storage network if the worker will run VMs.
+4. Console: **Quick create (+) → Import YAML**, choose the inventory project,
+   paste the definition, **Create**. Or:
    ~~~sh
    oc create -f manifests/03-unassigned-inventory.yaml
    ~~~
-5. Return to **Host inventory**, open the new inventory and wait until its
-   discovery image is available. Use this inventory for the remaining steps.
+5. Wait until the new inventory shows its discovery image. Then set `INV` and
+   `INV_NS` (step 1) to it.
 
-### BMC credentials (only if you create the Secret by CLI)
-
-The console **With BMC Form** takes the username and password directly. If your
-process uses a Secret instead, create it privately from files, never from
-literals, and delete the files afterwards. Keys follow the BareMetalHost
-convention (`username`, `password`).
-
-Use a separate Secret for this test host. BareMetalHost controllers can take
-ownership of the referenced Secret and remove it when the host is deleted.
-Do not reference a shared credential Secret belonging to another host or service.
+**3. Create the private BMC Secret.** Use a separate Secret for this host: the
+host controller can take ownership of it and remove it when the host is deleted.
+Create it from files, never from literals. The keys are `username` and
+`password`. (The console's **With BMC Form** takes them directly; this runbook
+uses the paused file, which needs the Secret.)
 
 ~~~sh
 umask 077; PRIV=$(mktemp -d)
@@ -89,55 +94,35 @@ rmdir "$PRIV"
 unset PRIV
 ~~~
 
-No placeholder Secret YAML is shipped, so a template cannot be applied by mistake.
+No Secret YAML is shipped, so a template cannot be applied by mistake.
 
-### TLS
+**4. Fill the paused host file.** Fill
+[`02-baremetalhost-paused.yaml`](manifests/02-baremetalhost-paused.yaml) with
+`$HOST`, `$INV_NS`, `$INV`, the BMC address and the Secret name
+`$HOST-bmc-secret`. Keep the file outside the repository. It starts paused with
+cleaning disabled and certificate verification on, and holds the Secret's name,
+not its contents. Turning certificate verification off is a host-specific
+exception that needs written owner approval.
 
-Certificate verification stays enabled. A "disable certificate verification"
-choice is a host-specific exception that needs written owner approval; do not
-make it the default.
+Disabled cleaning does not protect other disks or boot records, and the
+Assisted Installer's disk preparation is separate. Only disposable disks may be
+connected; the **Format** checkbox is no protection.
 
-### Prepare the paused host file
+Return to the runbook (section B).
 
-The BMC form does not offer a disk-cleaning setting. The runbook uses a paused
-host file so settings can be reviewed before discovery. The file is only
-prepared here; its single upload is in runbook C1. BMH cleaning and
-Assisted Installer disk preparation are separate: **disabled cleaning does not
-guarantee preservation of other disks or their boot records**. Use only
-disposable connected disks; do not rely on the Format checkbox for protection.
+### Start discovery (runbook C1, after the upload)
 
-Preparation (runbook A4) has two steps and **stops there**. Nothing is uploaded
-and discovery is not started during preparation.
+The runbook's C1 does the upload. Right after it, with `INV_NS` and `HOST`
+set, confirm the saved settings, then start discovery:
 
-1. Create the private BMC Secret above in the inventory namespace.
-2. Fill [`02-baremetalhost-paused.yaml`](manifests/02-baremetalhost-paused.yaml)
-   and keep it outside the repository. The BMC URI must match the vendor. The
-   template starts paused with cleaning disabled and TLS verification enabled;
-   this does not yet select the operating system's install disk. It references
-   the Secret by name; do not include the Secret's contents.
+~~~sh
+oc get baremetalhost "$HOST" -n "$INV_NS" -o jsonpath='{.spec.automatedCleaningMode}{" "}{.metadata.annotations.baremetalhost\.metal3\.io/paused}{"\n"}'
+# Expected: disabled true   (if not, stop; do not start discovery)
+oc patch baremetalhost "$HOST" -n "$INV_NS" --type=merge -p '{"spec":{"online":true}}'
+oc annotate baremetalhost "$HOST" -n "$INV_NS" baremetalhost.metal3.io/paused-
+~~~
 
-Stop here. Continue with the readiness check (runbook B). Upload happens later,
-once, in runbook C1.
-
-### Upload the host and start discovery (runbook C1, once)
-
-Do this only after the readiness check passes, and only once. If the host already
-exists, do not upload again; ask the administrator to check CIM.
-
-1. On the inventory page choose **Add hosts → By uploading a YAML → Open file**,
-   select the filled paused file, then **Upload**.
-2. **Immediately after the upload**, confirm the saved settings, then start
-   discovery. Run this block once:
-   ~~~sh
-   oc get baremetalhost "$HOST" -n "$INV_NS" -o jsonpath='{.spec.automatedCleaningMode}{" "}{.metadata.annotations.baremetalhost\.metal3\.io/paused}{"\n"}'
-   # Expected: disabled true   (if not, stop; do not start discovery)
-   oc patch baremetalhost "$HOST" -n "$INV_NS" --type=merge -p '{"spec":{"online":true}}'
-   oc annotate baremetalhost "$HOST" -n "$INV_NS" baremetalhost.metal3.io/paused-
-   ~~~
-3. Return to the runbook's discovered-host review (C2). Confirm the install disk
-   before approving or assigning the host. Keep BMH cleaning disabled, and
-   confirm again that every connected disk is disposable. Do not assign the
-   host until that review is done (runbook C3).
+Then do the runbook's disk review (C2) before approving (C2) or assigning (C3).
 
 For reference, **Add hosts → With BMC form** shows the fields below. It also
 offers NMState and MAC-to-interface mapping for static or bonded networks.
@@ -191,7 +176,7 @@ Stop and ask the owner before repeating an installation on a host.
 
 | Object | Action |
 | --- | --- |
-| `new-worker-check` pod | Delete |
+| `new-worker-check` pod | Delete (it may already be gone if Case 02 recovery removed it) |
 | `cim-expansion-check` project | Delete only if this run created it and it is empty |
 | New worker | Leave installed for the next agreed test |
 | Inventory InfraEnv | Leave unchanged |

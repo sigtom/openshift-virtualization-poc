@@ -13,7 +13,7 @@ Abort rule and escalation contact (test limits, not a recovery-time claim): ____
 
 | Result | Pass when | Outcome |
 | --- | --- | --- |
-| **VM restart** | VM restarts on an approved healthy destination as a new VMI with captured fence order and BMC corroboration | |
+| **VM restart** | VM restarts on an approved healthy destination as a new VMI with captured fence order and a matching BMC log entry | |
 | **Node recovery** | SOURCE Ready; remediation object gone; remediation and out-of-service taints cleared; NHC cleanup done before re-pause | |
 
 ## Readiness check (all yes before the fault)

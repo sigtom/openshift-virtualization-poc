@@ -8,7 +8,9 @@ Inventory: ______   Workload cluster: ______   Spare host: ______
 BMC vendor and address form used: ______   Intended install disk: ______
 Owner approval to add, use and retain: ______
 
-**Boundary:** manual expansion, not autoscaling.
+**Boundary:** manual expansion, not autoscaling. Fill in the expansion result
+right after the check pod is Running (runbook C6), before any optional recovery
+test; recovery can remove that pod.
 
 ## Final result
 
