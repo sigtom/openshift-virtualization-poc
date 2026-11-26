@@ -1,9 +1,9 @@
 # HTPasswd login: walkthrough
 
-> **Status.** The console steps (add a provider, first login, cluster-admin, cleanup) were
-> exercised on OpenShift 4.22. There is no saved proof yet of the password-change login check
-> (new password works, old one is refused); record it in your own run. The 4.21 steps were
-> checked against documentation only. [Details](ADMIN-GUIDE.md#verification-notes).
+> **Status.** Provider setup, first login, cluster-admin access, both password-change
+> login checks and cleanup were exercised on OpenShift 4.22 with an earlier procedure.
+> The current native command sequence still needs a full run. The 4.21 steps were checked
+> against documentation only. [Details](ADMIN-GUIDE.md#verification-notes).
 
 **Goal:** add a local test login, make it a cluster administrator, change its password, and
 then remove it, while the existing logins keep working.
@@ -268,6 +268,8 @@ Then wait for authentication to settle as in step 3.
    **Expected:** it is refused (for example,
    *Invalid login or password. Please try again.*).
 3. Confirm your administrator session and the other logins still work.
+
+![Earlier test: the old password was refused after the password change](images/07-old-password-refused.png)
 
 A password change does **not** end sessions or tokens that already exist. Ending them is a
 separate step (sign-out, or deleting the user's tokens in step 7).

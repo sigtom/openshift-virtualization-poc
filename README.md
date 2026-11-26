@@ -84,8 +84,9 @@ storage.
   review; an earlier rehearsal removed its check workload. It starts from an existing
   CIM setup and a spare approved server; it does not show autoscaling.
 - **Case 35:** console provider setup, first login, cluster-admin access and cleanup
-  were exercised. The password-rotation login check has no saved evidence here. The
-  current command forms were checked only against local sample files.
+  were exercised, including a fresh login with the new password and refusal of the old
+  password. These results used an earlier procedure; the current command forms were
+  checked only against local sample files and limited server dry-runs.
 
 Later command changes were checked with sample data and limited server dry-runs
 (validation without saving changes). The complete cluster tests have not been repeated.

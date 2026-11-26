@@ -1,8 +1,9 @@
 # Test Case 35 - HTPasswd Provider
 
-> **Status.** The console steps were exercised on OpenShift 4.22. There is no saved proof yet
-> of the password-change login check; record it in your own run. The 4.21 steps were checked
-> against documentation only. [Details](ADMIN-GUIDE.md#verification-notes).
+> **Status.** The console steps, including both password-change login checks, were exercised
+> on OpenShift 4.22 with an earlier procedure. The current native command sequence still
+> needs a full run. The 4.21 steps were checked against documentation only.
+> See [verification notes](ADMIN-GUIDE.md#verification-notes).
 
 For teams asking: *how do we add a local login, make it a cluster administrator, and later
 change its password, without disturbing the logins we already have?* The case sets up (or
