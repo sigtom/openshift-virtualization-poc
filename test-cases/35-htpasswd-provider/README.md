@@ -7,8 +7,8 @@
 > identity providers remain unverified.
 
 For teams asking: *how do we add a local login, make it a cluster administrator, and later
-change its password, without disturbing the logins we already have?* The case sets up (or
-reuses) an HTPasswd identity provider, adds one test user, grants that user `cluster-admin`,
+change its password, without disturbing the logins we already have?* The walkthrough sets up
+a new temporary HTPasswd identity provider, adds one test user, grants that user `cluster-admin`,
 and rotates its password.
 
 **Scope.** Red Hat's documentation describes HTPasswd for development rather than
@@ -19,16 +19,15 @@ use an external identity provider.
 
 | Your role | Open this |
 | --- | --- |
-| Customer / participant | **[Start the walkthrough](RUNBOOK.md)** |
-| Cluster administrator | [Preparation, commands, rotation, cleanup](ADMIN-GUIDE.md#prepare) |
+| Everyone | **[Start the walkthrough](RUNBOOK.md)**: one complete new-provider path |
+| Cluster administrator | [Reference: existing provider, ownership, rollback, troubleshooting](ADMIN-GUIDE.md#prepare) |
 | Everyone | [Record results](RESULTS-TEMPLATE.md) |
 
-## Four stages
+## Walkthrough steps
 
-1. **Prepare:** the agreed user, inventory of existing providers and users, a second known-good admin session.
-2. **ONE quick readiness check.**
-3. **Perform and show results:** provider, user, `cluster-admin` binding, login, password rotation.
-4. **Stop and clean up:** remove only what the test created, or follow the separate keep-account path.
+The [walkthrough](RUNBOOK.md) covers: prepare (tools, private folder, new password file),
+one readiness check, create the provider in the console, first login, `cluster-admin`
+binding, verify, rotate the password, and clean up in order.
 
 ## How it works
 

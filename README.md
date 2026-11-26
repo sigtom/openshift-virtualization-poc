@@ -11,7 +11,7 @@ Hands-on tests for VMware/vCenter teams learning OpenShift Virtualization.
 | 03 — CPU and memory oversubscription (**client validation pending**) | **[Run the test](test-cases/03-cpu-memory-oversubscription/RUNBOOK.md)** | [Prepare](test-cases/03-cpu-memory-oversubscription/ADMIN-GUIDE.md#prepare) and [memory density](test-cases/03-cpu-memory-oversubscription/MEMORY-DENSITY.md) |
 | 04 — Network oversubscription (**client validation pending**) | **[Run the test](test-cases/04-network-oversubscription/RUNBOOK.md)** | [Prepare](test-cases/04-network-oversubscription/ADMIN-GUIDE.md#prepare) |
 | 05 — Storage IOPS (**client validation pending**; Dell layer **deferred**) | **[Run the test](test-cases/05-storage-iops/RUNBOOK.md)** | [Prepare](test-cases/05-storage-iops/ADMIN-GUIDE.md#prepare) |
-| 35 — HTPasswd Provider | **[Run the test](test-cases/35-htpasswd-provider/RUNBOOK.md)** | [Prepare](test-cases/35-htpasswd-provider/ADMIN-GUIDE.md#prepare) |
+| 35 — HTPasswd Provider | **[Run the test](test-cases/35-htpasswd-provider/RUNBOOK.md)** | [Admin reference](test-cases/35-htpasswd-provider/ADMIN-GUIDE.md#prepare) |
 
 Case 01 covers approved-host placement, VM separation, an impossible rule,
 manual live migration and automatic placement-rule correction. Each test
