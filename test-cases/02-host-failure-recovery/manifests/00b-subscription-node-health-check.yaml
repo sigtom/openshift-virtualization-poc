@@ -1,4 +1,4 @@
-# Case 02 - FENCING: NOT TESTED. Use ONLY if Node Health Check is MISSING
+# Case 02 - review and fill local values before use. Use ONLY if Node Health Check is MISSING
 # (ADMIN-GUIDE "Operator check"). Apply this single file alone; the Fence Agents
 # Remediation subscription is a separate file.
 #

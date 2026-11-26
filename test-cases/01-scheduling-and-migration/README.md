@@ -12,7 +12,6 @@ correction of a placement-rule violation.
 | --- | --- |
 | Customer / participant | **[Start the walkthrough](RUNBOOK.md)** — web console actions, optional CLI equivalents and expected results |
 | Cluster administrator | [Prepare and supervise the lab](ADMIN-GUIDE.md#prepare) — prerequisites, setup, isolation checks and recovery |
-| Presenter | [Recording outline](VIDEO-OUTLINE.md) — the same order, with a short explanation for each scene |
 | Everyone | [Record results](RESULTS-TEMPLATE.md) — customer observations and administrator sign-off |
 
 The customer walkthrough starts with **five Stopped VMs and prepared disks**.
@@ -42,7 +41,7 @@ created VMs, including manual and automatic live migration, guest continuity,
 and restoration of the shared configuration. Screenshots illustrate the steps.
 The execution used alternate shared filesystem storage; **vxflexos / Block / RWX
 provisioning remains unverified**. Complete the storage preflight on the target
-cluster. Video recording remains pending.
+cluster.
 Keep completed results and environment evidence private.
 
 Technical configuration, Red Hat references, reset and disk cleanup are in

@@ -11,7 +11,7 @@ need to read the cluster inventory, operator configuration or cleanup commands.
 | Immediately before Automatic | Repeat [isolation checks and guarded activation](#activate). |
 | Immediately after migration or on timeout | Return to Predictive using section 7.6. |
 | After the session | [Restore the original shared settings](#restore). |
-| Another take / finished testing | [Reset and keep disks](#reset), or [remove the lab](#cleanup). |
+| Repeat the test / finished testing | [Reset and keep disks](#reset), or [remove the lab](#cleanup). |
 
 **Keep these boundaries:** use only the agreed nodes and exclusive lab namespace.
 Do not enable Automatic without a fresh priority/force-eviction inventory.
@@ -820,9 +820,9 @@ Contains cluster names and UIDs: keep out of the public repository.
 
 <a id="reset"></a>
 
-## 9. Reset between recording takes
+## 9. Reset between test runs
 
-Root disks are kept between takes (guest changes persist; boot_id changes on each start).
+Root disks are kept between runs (guest changes persist; boot_id changes on each start).
 
 1. Descheduler in Predictive (7.6 last block) or restored (7.9).
 2. Migrations: `oc get vmim -n $NS -o custom-columns=NAME:.metadata.name,VMI:.spec.vmiName,PHASE:.status.phase`.

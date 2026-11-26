@@ -382,4 +382,4 @@ The administrator must [restore the original shared configuration](ADMIN-GUIDE.m
 
 ![Five stopped VMs with their definitions retained](images/06-all-stopped.png)
 
-For recording, use the short [video outline](VIDEO-OUTLINE.md). For older numbered references in YAML comments, use the [administrator reference map](ADMIN-GUIDE.md#reference-map).
+For older numbered references in YAML comments, use the [administrator reference map](ADMIN-GUIDE.md#reference-map).

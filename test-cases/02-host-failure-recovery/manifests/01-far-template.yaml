@@ -1,37 +1,27 @@
-# Case 02 - FENCING: NOT TESTED. Execution is pending.
-# The operator schema INSTALLED on the client cluster governs; check with
+# Case 02 - review and fill local values before use.
+# The operator schema INSTALLED on the cluster governs; check with
 #   oc explain fenceagentsremediationtemplate.spec.template.spec
-# before applying (ADMIN-GUIDE "Schema check").
 #
-# Reference versions only (NOT the client's versions): fields were read from
-# medik8s/fence-agents-remediation tag v0.8.0 and ClusterLabs/fence-agents
-# commit aed06661b0b6fd4e69d44672f59bb8d3eecccc67 (agents/redfish/fence_redfish.py).
-# Re-check against the INSTALLED image: run "fence_redfish -o metadata" in the
-# FAR manager container.
+# SOURCE ONLY. This template maps the SOURCE node only. Never add TARGET or any
+# TARGET credential here.
 #
 # BEFORE APPLYING replace every REPLACE_* value:
-#   REPLACE_SOURCE_NODE / REPLACE_TARGET_NODE : exact Node names (oc get node)
-#   REPLACE_*_BMC_HOST   : that node's own iDRAC address (one per node)
-#   REPLACE_*_SYSTEM_ID  : the Redfish Systems member id for that same server,
-#                          read from read-only inventory (ADMIN-GUIDE).
-#                          Dell iDRAC is commonly System.Embedded.1; do not assume.
+#   REPLACE_SOURCE_NODE      : exact SOURCE Node name (oc get node)
+#   REPLACE_SOURCE_BMC_HOST  : that node's own BMC address
+#   REPLACE_SOURCE_SYSTEM_ID : the Redfish Systems member id of that same server,
+#                              read from read-only inventory (ADMIN-GUIDE).
+#                              Dell iDRAC is commonly System.Embedded.1; do not assume.
 #
-# Credentials are NOT here. Each node's Secret is created privately from local
-# files (ADMIN-GUIDE "Create fencing Secrets") with keys --username and
-# --password. Upstream rejects a parameter defined in both a Secret and this CR,
-# so username/password must NOT be added to the sharedparameters below.
+# Credentials are NOT here. The Secret case02-bmc-source is created privately
+# (ADMIN-GUIDE) with keys --username and --password. A parameter must not be
+# defined in both a Secret and this CR, so no username/password below.
 #
-# TLS is verified by default (fence_redfish verifies unless --ssl-insecure is
-# passed). Do not add --ssl-insecure. If the BMC certificate is not trusted by
-# the FAR image, STOP (see ADMIN-GUIDE "BMC certificate trust").
+# TLS is verified by default. Do not add --ssl-insecure. If the BMC certificate
+# is not trusted by the FAR image, STOP; any exception is a separate, approved,
+# host-specific decision (ADMIN-GUIDE "BMC certificate trust").
 #
-# remediationStrategy OutOfServiceTaint: official docs say it removes pods AND
-# volume attachments on the failed node (GA since OCP 4.15). Chosen because the
-# VM disk is a PVC. ResourceDeletion is the alternative; change only with a
-# documented reason.
-#
-# Timeouts are deliberately tight and bounded: 3 attempts x 60s, 10s apart.
-# They are test limits, not a recovery-time commitment.
+# OutOfServiceTaint removes pods and volume attachments on the failed node.
+# Timeouts are bounded test limits, not a recovery-time commitment.
 apiVersion: fence-agents-remediation.medik8s.io/v1alpha1
 kind: FenceAgentsRemediationTemplate
 metadata:
@@ -48,15 +38,11 @@ spec:
       retryinterval: "10s"
       timeout: "60s"
       sharedparameters:
-        # Red Hat docs: "off" is supported only on cloud platforms. Use reboot.
         --action: "reboot"
       nodeparameters:
         --ip:
           REPLACE_SOURCE_NODE: "REPLACE_SOURCE_BMC_HOST"
-          REPLACE_TARGET_NODE: "REPLACE_TARGET_BMC_HOST"
         --systems-uri:
           REPLACE_SOURCE_NODE: "/redfish/v1/Systems/REPLACE_SOURCE_SYSTEM_ID"
-          REPLACE_TARGET_NODE: "/redfish/v1/Systems/REPLACE_TARGET_SYSTEM_ID"
       nodeSecretNames:
         REPLACE_SOURCE_NODE: case02-bmc-source
-        REPLACE_TARGET_NODE: case02-bmc-target

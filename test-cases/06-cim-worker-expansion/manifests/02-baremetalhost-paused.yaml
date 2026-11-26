@@ -1,0 +1,25 @@
+# Use when disk cleaning must be disabled before registration.
+# Replace all REPLACE_* values. Create the referenced BMC Secret privately first.
+# Registration starts only after the runbook removes the pause.
+# Confirm the Agent's installation disk separately before approval/installation.
+apiVersion: metal3.io/v1alpha1
+kind: BareMetalHost
+metadata:
+  name: REPLACE_HOST_NAME
+  namespace: REPLACE_INVENTORY_NAMESPACE
+  labels:
+    infraenvs.agent-install.openshift.io: REPLACE_INFRAENV_NAME
+  annotations:
+    inspect.metal3.io: disabled
+    baremetalhost.metal3.io/paused: "true"
+    bmac.agent-install.openshift.io/hostname: REPLACE_HOST_NAME
+    bmac.agent-install.openshift.io/role: worker
+spec:
+  automatedCleaningMode: disabled
+  bmc:
+    address: idrac-virtualmedia://REPLACE_BMC_HOST/redfish/v1/Systems/REPLACE_SYSTEM_ID
+    credentialsName: REPLACE_BMC_SECRET_NAME
+    disableCertificateVerification: false
+  bootMACAddress: REPLACE_BOOT_NIC_MAC
+  bootMode: UEFI
+  online: false
