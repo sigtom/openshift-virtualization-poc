@@ -43,9 +43,10 @@ oc get baremetalhost -n "$INV_NS"
 
 ### Create a separate inventory, only if needed
 
-Reuse an existing inventory unchanged if it is unassigned and does not approve
-hosts automatically. An installation inventory with `spec.clusterRef` already
-set is not suitable for this walkthrough's separate approval and assignment steps.
+Reuse an existing inventory unchanged if it is unassigned and its InfraEnv
+automatic approval setting is off. BMC-discovered hosts can still be approved
+automatically; keep them unassigned until you review the disks. An installation
+inventory with `spec.clusterRef` already set is not suitable for these steps.
 
 1. In **Host inventory**, note the namespace and approved pull-Secret name of
    the existing inventory. Do not display or copy its Secret contents.
@@ -81,6 +82,9 @@ read -r -s -p 'BMC password: ' p; printf '%s' "$p" > "$PRIV/password"; echo
 unset u p
 oc create secret generic "$HOST-bmc-secret" -n "$INV_NS" \
   --from-file=username="$PRIV/username" --from-file=password="$PRIV/password"
+rm -f "$PRIV/username" "$PRIV/password"
+rmdir "$PRIV"
+unset PRIV
 ~~~
 
 No placeholder Secret YAML is shipped, so a template cannot be applied by mistake.
@@ -132,6 +136,8 @@ InfraEnv does not approve ISO-discovered hosts automatically. Keep this test's
 inventory unassigned: no `spec.clusterRef`. Review the disk before assigning the
 host to any cluster; assignment can immediately start installation.
 
+![Disk review before assignment; serial numbers are redacted](images/09-discovered-disks.png)
+
 ~~~sh
 oc get baremetalhost "$HOST" -n "$INV_NS" -o jsonpath='{.status.provisioning.state} {.status.poweredOn}{"\n"}'
 oc get agent -n "$INV_NS" -o custom-columns=NAME:.metadata.name,APPROVED:.spec.approved,ROLE:.spec.role,STAGE:.status.progress.currentStage
@@ -172,4 +178,4 @@ Stop and ask the owner before repeating an installation on a host.
 | New worker | Leave installed for the next agreed test |
 | Inventory InfraEnv | Leave unchanged |
 | BMC Secret referenced by the installed host | Keep; the host registration still needs it |
-| `$PRIV` | Securely remove |
+| Private input files | Removed after Secret creation |

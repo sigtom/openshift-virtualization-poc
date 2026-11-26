@@ -32,8 +32,10 @@ This case starts from an **existing** environment; it does not set one up:
 - A hub with ACM/MCE and CIM already configured, and a managed workload cluster
   already imported.
 - A **host-inventory InfraEnv** (the "inventory") that you reuse **unchanged**.
-  It must be unassigned to a cluster (`clusterRef` absent) and must not
-  automatically approve hosts. If the existing installation inventory is
+  It must be unassigned to a cluster (`clusterRef` absent), with its InfraEnv
+  automatic approval setting off. BMC-discovered hosts can still be approved
+  automatically; keep them unassigned until you review their disks.
+  If the existing installation inventory is
   already assigned, create a separate inventory for this test; leave it intact.
 - One **spare approved physical server** with BMC access. Every connected disk
   must be disposable. Disconnect disks and unpresent SAN LUNs containing data
@@ -53,8 +55,8 @@ the generic `redfish-virtualmedia` form for a Dell server; Dell iDRAC uses
 | Other Redfish BMC | `redfish-virtualmedia://<bmc-host>/redfish/v1/Systems/<system-id>` |
 
 Use the host's own Systems id; do not assume it. Have the BMC username and
-password ready privately. They are typed into the console form; never write
-them in files in this repository.
+password ready privately. Use them to create the private Secret in A4; never
+write them in files in this repository or in the host upload file.
 
 **A3. Record the "before" size** on the **workload cluster**: **Compute → Nodes**,
 total Ready nodes, dedicated worker nodes, and allocatable CPU and memory
@@ -84,7 +86,7 @@ Run once before adding the host. Any **no** means **stop**.
 | # | Must be true | Where to look |
 | --- | --- | --- |
 | 1 | The inventory exists and is healthy (hub) | **Fleet Management → Infrastructure → Host inventory** |
-| 1a | Inventory is unassigned; automatic host approval is off | Administrator checks the InfraEnv YAML |
+| 1a | Inventory is unassigned; its InfraEnv automatic approval setting is off | Administrator checks the InfraEnv YAML |
 | 2 | The workload cluster is **Ready** (hub) | **Fleet Management → Infrastructure → Clusters** |
 | 3 | The spare's BMC is powered and reachable; the host is not already in the inventory | Host inventory **Hosts** tab; server may stay off |
 | 4 | The BMC address uses the vendor-appropriate form (A2) | Your notes |
@@ -137,6 +139,8 @@ Wait until it shows as discovered or needing approval.
 On the inventory's **Hosts** tab, expand the arrow at the left of the host row
 (**Details**). Check the hardware and disks against what you recorded. Clicking
 the hostname opens a rename dialog, so use the arrow for hardware details.
+
+![Discovered disks: review the intended installation disk; serial numbers are redacted](images/09-discovered-disks.png)
 
 BMC-discovered hosts can already be approved automatically. An **Available**
 host with **Actions → Approve** disabled needs no extra approval click. If
