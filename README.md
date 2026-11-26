@@ -83,12 +83,11 @@ storage.
   pod were exercised with a 4.21 hub. After the **latest** run, cleanup was held for
   review; an earlier rehearsal removed its check workload. It starts from an existing
   CIM setup and a spare approved server; it does not show autoscaling.
-- **Case 35:** console provider setup, first login, cluster-admin access and cleanup
-  were exercised, including a fresh login with the new password and refusal of the old
-  password. These results used an earlier procedure; the current command forms were
-  checked only against local sample files and limited server dry-runs.
+- **Case 35:** provider setup, first login, native password update, cluster-admin access,
+  new-password login, old-password refusal and scoped cleanup were exercised with a
+  temporary test account. Reusing an existing provider remains unverified.
 
-Later command changes were checked with sample data and limited server dry-runs
+For the other cases, later command changes were checked with sample data and limited server dry-runs
 (validation without saving changes). The complete cluster tests have not been repeated.
 
 Use each case's results sheet to record outcomes. Keep credentials, filled-in YAML

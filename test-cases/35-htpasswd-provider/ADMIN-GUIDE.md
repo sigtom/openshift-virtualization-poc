@@ -1,9 +1,8 @@
 # Administrator reference: HTPasswd login
 
-> **Status.** The console steps, including both password-change login checks, were exercised
-> on OpenShift 4.22 with an earlier procedure. The current native command sequence still
-> needs a full run. The 4.21 steps were checked against documentation only.
-> See [verification notes](#verification-notes).
+> **Status.** Provider setup, the native password update, administrator access, both fresh-login
+> checks and cleanup were exercised on OpenShift 4.22 with a temporary test account.
+> The 4.21 steps were checked against documentation only. [Details](#verification-notes).
 
 The complete test, in order, is the [walkthrough](RUNBOOK.md). This page covers only what
 comes before it, the reuse details, recovery and troubleshooting. The commands follow Red
@@ -139,13 +138,12 @@ it with `oc create -f`.
 
 - Console provider setup, first login, `cluster-admin` access and cleanup were exercised on
   OpenShift 4.22.
-- An earlier form of the file and Secret commands (rebuilding the Secret with
-  `oc create secret ... --dry-run=client | oc replace`) was checked on 4.22 with temporary
-  Secrets. The current commands (versioned `oc replace` of the saved Secret, the named
-  binding created new) were checked only with local sample files and a server-side dry run of a
-  Secret, not in a full run.
-- Saved results from the earlier procedure show a fresh login with the new password and
-  one refused attempt with the old password. The walkthrough includes the refusal
-  screenshot. Repeat both checks after changing the password in your own run.
-- 4.21 was checked against documentation only. Managed password sources, GitOps integration
-  and existing production identity providers remain unverified.
+- The native `htpasswd` commands, versioned Secret update and named binding were also
+  exercised with a new temporary provider on 4.22. The Secret kept its other fields.
+  A fresh login accepted the new password; a separate fresh login refused the old password
+  on its first attempt. The test account, grant, provider and Secret were then removed.
+- That native run used the administrator's CLI alternative to register the provider.
+  The separate browser session was signed out and closed before each password check.
+- 4.21 was checked against documentation only. Reusing an existing provider, managed
+  password sources, GitOps integration and existing production identity providers remain
+  unverified.

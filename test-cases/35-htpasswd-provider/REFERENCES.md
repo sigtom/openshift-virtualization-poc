@@ -1,10 +1,9 @@
 # Sources and applicability
 
-The provider, Secret, password-file update and cluster-admin procedures were checked against
-the OpenShift 4.21 and 4.22 documentation. Provider setup, login, cluster-admin access, both
-password-change login checks and cleanup were exercised on 4.22 with an earlier procedure.
-The current conditional update was checked with local sample files and a limited server
-dry-run, not in a complete run. There was no 4.21 runtime rehearsal.
+The procedures were checked against the OpenShift 4.21 and 4.22 documentation. Provider
+setup, the native password update, cluster-admin access, both fresh-login checks and cleanup
+were exercised on 4.22 with a temporary test account. Reusing an existing provider was not
+rehearsed. There was no 4.21 runtime rehearsal.
 
 | Topic | 4.21 | 4.22 |
 | --- | --- | --- |
