@@ -1,6 +1,6 @@
 # Test 03: CPU and memory oversubscription
 
-> **Client validation pending.** Target: OpenShift 4.21.31. Complete the client
+> **Client validation pending.** Target: OpenShift 4.21. Complete the client
 > results sheet before calling the test passed.
 
 For VMware/vCenter teams asking: *what happens to my VM when many other VMs
@@ -78,13 +78,20 @@ competing CPU load, stop checks and recovery were exercised with three repeats
 per phase. The screenshots are redacted reference output. This rehearsal did
 **not** establish CPU oversubscription or a safe ratio.
 
-The bounded OpenShift 4.22 memory rehearsal exercised density, new VM placement,
-host swap and VM swap measurements. **It was aborted:** swap use exceeded the
-agreed limit and the worker became unresponsive. The memory baseline completed;
-loaded and recovery benchmarks did not. Paging was observed, but this was not a
-successful performance comparison or a safe-ratio qualification.
+The latest OpenShift 4.22 memory rehearsal exercised the root-filesystem swap
+MachineConfig, initial provisioning and later-boot activation, density and new VM
+placement. Fresh fixtures were created through the console from a prepared image
+on NFS Filesystem/RWX storage. Running guest RAM exceeded physical RAM, and three
+memory baseline repeats completed.
 
-That rehearsal used separately prepared temporary swap storage. The optional
-root-filesystem swap MachineConfig was source-reviewed, not run verbatim.
-OpenShift 4.21 execution and new-VM provisioning on `vxflexos` / Block / RWX
+**The ramp was aborted:** kubelet evicted a VM when pod-allocatable memory reached
+its eviction threshold. Linux still reported spare RAM. A small amount of platform
+paging was observed; all six test-VM compute containers reported zero swap at the
+attribution check. Loaded and recovery benchmarks were **Not run**. This does not
+establish a successful VM-paging comparison or a safe ratio. Earlier aborted
+attempts are not qualifying comparison results either.
+
+The new VMs were stopped and the density value restored. Swap and the worker were
+retained for review; full swap removal was not repeated. OpenShift 4.21 execution,
+the optional custom-pool path and new-VM provisioning on `vxflexos` / Block / RWX
 remain unverified. Complete your own prerequisites and results sheet.

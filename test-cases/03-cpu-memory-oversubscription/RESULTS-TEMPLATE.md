@@ -8,6 +8,8 @@ Date: ______   Customer: ______   Administrator: ______
 OCP: ______   Virtualization: ______   Test worker: ______
 Approved by (Red Hat / client) and date: ______   Abort rule and contact: ______
 Warm-up ____ s   Measure ____ s   Repeats ____ (proposal 300 / 900 / 3)
+Required memory result: admission/performance comparison / test-VM pages in host swap: ______
+Record these separately; admission alone cannot pass a VM-paging requirement.
 
 ## VMs used (as found; do not change them)
 
@@ -27,11 +29,15 @@ Changes made to any VM or guest (tools added, anything else) and how they were u
 | --- | --- |
 | Logical CPUs / physical cores / threads per core | |
 | Allocatable CPU / allocatable memory | |
+| Kubelet node-available / pod-available memory; sample time and stop floor for each | |
 | Running-VM vCPU: baseline / CPU phase / memory phase | |
 | vCPU : logical CPU and vCPU : physical core, per phase | |
 | Pod CPU requests and pod memory requests, per phase | |
 | Guest configured RAM (sum), per phase | |
-| **Admission ratio:** total running guest RAM ÷ physical RAM, per memory step | |
+| **Admission ratio:** total running guest RAM ÷ installed physical RAM, per memory step | |
+| Other ratios, if used: guest RAM ÷ OS-visible RAM; pod requests ÷ allocatable (label each separately) | |
+| Installed RAM / OS-visible RAM / allocatable memory | |
+| Measured VMI `metadata.uid` (same for all 9 runs; restart or migration = invalid) | |
 | Actual launcher memory request, reduced guest-memory component, overhead and node allocatable (as measured) | |
 | Actual launcher QoS class; cgroup swap allowance (`memory.swap.max`) and `memory.swap.current` | |
 | Guest swap as found, per VM (on/off, size; not changed on reused VMs) | |
@@ -50,6 +56,7 @@ Changes made to any VM or guest (tools added, anything else) and how they were u
 | Swap configured vs documented formula value (RAM × (density ÷ 100% − 1)); bounded demonstration or full ratio | |
 | `wasp-agent` pod Ready on the test node (not only the DaemonSet rollout) | |
 | New fixture VMs: namespace, disk created by VM or by administrator (DataVolume/PVC Ready) | |
+| Optional prepared image: DataVolume, DataSource, PVC name and UID, source PVC, storage class/mode used (NFS rehearsal does not qualify vxflexos) | |
 | Swap storage: backing disk, filesystem, free space, file path and storage owner approval | |
 | Swap size and headroom (from the approver) | |
 | New rendered MachineConfig name, and node running it (`currentConfig`, state Done) | |
@@ -67,8 +74,10 @@ Record admission, host paging and workload performance separately.
 | 1 | | | | | | | |
 | 2 | | | | | | | |
 
-Stop thresholds (swap-used limit, available-memory floor, hold bytes): ______
-Hold duration = settle + (warm-up + measure) × repeats + margin: ______ s
+Stop thresholds (swap-used limit, kubelet node-available floor, kubelet pod-available floor, Linux available-memory floor, I/O-wait limit and sample period, off-node missing-sample limit, hold bytes): ______
+Ramp VM background holds (pid, bytes, timeout, start/stop time, still matching command?): ______
+Residual swap after release: cold pages only / sustained swap I/O during a measurement: ______
+Hold duration = remaining ramp + settle + (warm-up + measure) × repeats + margin: ______ s
 A repeat with an expired hold is invalid; mark it in the measured-workload table.
 First step with attributable host swap: ______   Abort used? ______
 

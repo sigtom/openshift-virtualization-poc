@@ -12,8 +12,8 @@ the role is new. The administrator
 prepares the [results sheet](RESULTS-TEMPLATE.md), tools and graphs first.
 [New test VMs](ADMIN-GUIDE.md#prepare) are a fallback.
 
-The CPU console walkthrough has been rehearsed on OpenShift 4.22. The memory
-rehearsal observed paging but was aborted before loaded and recovery measurements;
+The CPU console walkthrough and memory preparation have been rehearsed on OpenShift 4.22.
+The latest memory ramp was aborted when kubelet evicted a VM, before loaded and recovery measurements;
 see [verification limits](README.md#walkthrough-verification). OpenShift 4.21 execution remains unverified. Complete your results sheet
 before calling a test passed. A benchmark is not a production
 capacity recommendation.
@@ -122,7 +122,7 @@ change cluster settings. Guest swap alone does not satisfy the host-swap require
 The administrator gives you **one step at a time**. Your sheet lists, for each step, which
 VMs hold memory, how many **bytes** each holds (`BYTES`, for example `40G`) and for how many
 **seconds** (`SECONDS`). Use exactly those values; do not choose your own. The sheet's
-`SECONDS` is long enough to cover the settle time and every measured repeat of the step.
+`SECONDS` covers the remaining ramp, settle time and every measured repeat of the step.
 
 1. With CPU load stopped, open each listed VM's serial console. Run this **inside the VM**,
    in the foreground (the prompt does not return until it ends):
@@ -135,7 +135,8 @@ VMs hold memory, how many **bytes** each holds (`BYTES`, for example `40G`) and 
    The `--timeout` is mandatory: it ends the load. The command fills that much memory once,
    then holds it without rewriting it, so the host can move idle pages to swap. The
    administrator checks this behaviour on the installed `stress-ng` before the session.
-   Leave each console open and untouched while the hold runs.
+   Leave each console open and untouched while the hold runs. The administrator controls any
+   extra small holds used to find the measurement level.
 
    ![A reference memory hold has started; the prompt has not returned. The size and timeout come from your sheet](images/15-memory-hold-running.png)
 
@@ -148,18 +149,16 @@ VMs hold memory, how many **bytes** each holds (`BYTES`, for example `40G`) and 
 4. To stop a hold early press **Ctrl+C** in that console and check the prompt returns. This
    stops only the command you started. Tell the administrator before and after. If the prompt
    does not return, tell the administrator; do not keep pressing keys. Participants must not
-   stop a VM or use `killall`.
+   stop a VM or use `killall`. Keep every VM Running, idle before the holds and Running after they
+   stop; a VM restart or migration makes the comparison invalid.
 5. Do the next step on the sheet only when the administrator says so. The administrator
-   adds one VM at a time. At the first attributable host paging, **stop increasing load**
-   and measure at that level if it stays within the agreed limits.
-
-![Reference VM swap rose before the worker stopped responding. The run was aborted; None means missing metrics, not zero swap](images/16-memory-paging.png)
+   adds one VM at a time. When host paging starts, **stop increasing load** while the
+   administrator checks whether a test VM paged. Measure at that level only when the
+   administrator confirms the required condition and the agreed limits still hold.
 
 **Abort if a stop limit is reached or the worker becomes Not Ready.** Stop the holds and
 tell the administrator. If a console is unreachable or Ctrl+C does not stop the hold, the administrator stops only the
 new test VMs. Wait for recovery before doing anything else; an aborted run does not pass.
-
-![Not Ready is a stop condition, even when VM paging was observed](images/17-memory-abort.png)
 
 **Expected:** each command stays running through all repeats, then finishes at its timeout
 (or at your Ctrl+C) and prints a short summary, and the prompt returns. The older helper
@@ -177,12 +176,13 @@ application test.
 
 If the phase was aborted or the worker restarted, record **Fail (aborted)**. The administrator
 recovers the worker and restores the settings first. A benchmark after that restart is a
-new run, not a recovery result for the failed comparison.
+new run, not a recovery result for the failed comparison. **After an abort, stop here and hand off to the administrator.**
+The numbered steps below apply only to a comparison that stayed valid.
 
 1. Confirm every competitor reports `NOT running` after `poc-load status`. If memory holds
    ran, also check each hold's console: it finished or you pressed Ctrl+C, and the prompt
    returned. (`poc-load status` does not cover memory holds.)
-2. Wait five minutes, then repeat the CPU command **three times** with the same settings. If the memory phase was approved and run, also repeat the memory command **three times**, one run at a time. Otherwise leave memory **Blocked**.
+2. Wait five minutes (for memory, the settle time counts only from when the administrator confirms the memory was released; leftover swap may remain), then repeat the CPU command **three times** with the same settings. If the memory phase was approved and run, also repeat the memory command **three times**, one run at a time. Otherwise leave memory **Blocked**.
 3. Record whether throughput and latency returned close to the baseline.
 
    ![Reference CPU recovery summary after competing load stops](images/09-recovery-result.png)

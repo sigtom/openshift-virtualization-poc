@@ -1,7 +1,10 @@
-# Case 03 - NOT TESTED. Administrator preparation only; read MEMORY-DENSITY.md first.
+# Case 03 - Administrator preparation only; read MEMORY-DENSITY.md first.
+# Root-filesystem swap was rehearsed on a worker-only pool on 4.22, including a later boot.
+# Verify the installed version and fill the approved pool role and size before use.
 # Based on the OpenShift Virtualization 4.21/4.22 documented WASP procedure.
 # Keeps its /var/tmp/swapfile path, kubelet drop-in and system-slice protection.
-# Differences: case-owned MachineConfig/unit names, approved pool role and agreed swap size.
+# Differences: case-owned names, approved pool role/size, and ordering the existing-file
+# check before provisioning so both units cannot try to activate a newly created file.
 #
 # Replace REPLACE_POOL_ROLE and REPLACE_SWAP_SIZE_MB (MiB) from the results sheet.
 # The pool must contain only approved worker-only nodes. Never target master.
@@ -58,6 +61,7 @@ spec:
           contents: |
             [Unit]
             Description=Enable the existing swap file on later boots
+            Before=perf-swap-provision.service
             ConditionFirstBoot=no
             ConditionPathExists=/var/tmp/swapfile
 

@@ -25,9 +25,10 @@
   node swap as removed. This repository has not resolved how that fits the Virtualization
   section and does not state the support or Technology Preview status. Use the installed
   release's Virtualization procedure; ask Red Hat if its applicability is unclear.
-- A bounded 4.22 rehearsal observed host and VM paging, then was aborted after exceeding
-  a stop limit and losing worker responsiveness. Loaded and recovery benchmarks were not
-  completed. The optional root-filesystem swap template was not run verbatim; see
+- The latest 4.22 rehearsal exercised the root-filesystem swap template, including initial
+  provisioning and later-boot activation. Its ramp was aborted by kubelet's pod-allocatable
+  memory eviction before test-VM paging was observed. Loaded and recovery benchmarks were
+  not completed; see
   [verification limits](README.md#walkthrough-verification).
 
 ## Key applicability differences

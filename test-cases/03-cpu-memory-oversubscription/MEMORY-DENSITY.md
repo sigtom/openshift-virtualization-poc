@@ -1,8 +1,9 @@
 # Prepare and run the memory test
 
-> **Administrator only.** The bounded 4.22 rehearsal observed host and VM paging,
-> then was aborted when a stop limit was exceeded and the worker became unresponsive.
-> Loaded and recovery benchmarks were not completed. See the
+> **Administrator only.** Root-filesystem swap preparation and later-boot activation
+> were exercised on 4.22. The latest memory ramp was aborted when kubelet evicted a VM
+> at the pod-allocation limit. Test-VM paging, loaded and recovery benchmarks were not
+> completed in that attempt. See the
 > [verification limits](README.md#walkthrough-verification).
 > Participants continue only when their sheet says *Memory prerequisites approved*.
 >
@@ -16,6 +17,10 @@ Memory density reduces eligible VMs' scheduling requests, allowing their combine
 to exceed host RAM. In this procedure, host swap backs inactive VM pages when memory is tight.
 Enabling swap alone does not change VM requests or prove memory contention.
 
+**Agree the goal first.** Comparing performance with more guest RAM assigned than physical
+RAM is different from requiring VM pages to enter host swap. Write which result the run
+must demonstrate. A run with no VM paging cannot pass a goal that requires it.
+
 ## Three questions
 
 Record each on its own line of the results sheet.
@@ -23,10 +28,10 @@ Record each on its own line of the results sheet.
 | Layer | Question | Evidence |
 | --- | --- | --- |
 | **Admission** | Is total *running guest RAM* larger than the node's physical RAM? | Sum of `domain.memory.guest` of running VMs on the node ÷ physical RAM. This is a measurement, not the HCO percentage (125 is a setting). Also record actual launcher pod requests and node allocatable |
-| **Host paging** | Did the host actually page? | Node swap-out counters rising **and** swap usage above zero on at least one VM launcher's `compute` container (`container_memory_swap`, or `memory.swap.current` of its cgroup in an approved node shell) |
+| **VM paging** | Did test-VM memory enter host swap? | Node swap-out counters rising **and** swap usage above zero on at least one VM launcher's `compute` container (`container_memory_swap`, or `memory.swap.current` of its cgroup in an approved node shell) |
 | **Workload performance** | Did the measured VM slow down? | The measured-VM results, compared with its baseline |
 
-Admission alone does not prove host paging. Unchanged throughput is a valid observation;
+Admission alone does not prove VM paging. Unchanged throughput is a valid observation;
 record separately whether any VM memory was swapped.
 
 ## Two scopes
@@ -162,7 +167,7 @@ first (Step 1, `nodes-state.txt`) the node's cordon, taints and labels; you rest
 Placement has two stages, because a taint of your own also keeps DaemonSet pods such as
 `wasp-agent` off the node:
 
-1. **While the swap MachineConfig rolls out (Step 6 only).** The pool must be able to converge,
+1. **While the swap MachineConfig rolls out (Step 6 only).** The pool must be able to finish updating,
    so the node is **uncordoned** during this stage. Protect other workloads with one owned
    taint and a label: `oc adm taint node TESTNODE perf-lab.example.com/memory-host=true:NoSchedule`
    and `oc label node TESTNODE perf-lab.example.com/memory-host=true`. If swap already exists
@@ -218,10 +223,8 @@ meets the test requirements. Reuse it unchanged; do not add another swap file.
     NODE_SWAP_SPACE = NODE_RAM × (MEMORY_OVER_COMMIT_PERCENT ÷ 100% − 1)
 
 At 125% that is 25% of node RAM (about 63 GiB for a node with about 252 GiB). That is the
-**fully configured** ratio. A smaller swap is a **bounded first-paging demonstration**: it can show
-whether paging starts, but it does not show what the full configured ratio does. One rehearsal
-used 14 GiB of swap with 125% density; that run was a bounded demonstration, not a sizing
-recommendation, and 14 GiB is not enough for any other node by default. Record both numbers on
+**fully configured** ratio. A smaller swap can show
+whether paging starts, but it does not demonstrate the full configured ratio. Record both numbers on
 the sheet (swap configured and the formula value) and say which one the run used. Verify the
 formula in the installed documentation.
 
@@ -231,14 +234,16 @@ under a separately reviewed procedure. Do not substitute an arbitrary mount path
 
 ## Step 6. Add swap on the pool (disruptive; skip if swap already exists)
 
-Do this with **all lab VMs stopped** and no other workloads on the test node. Use stage 1 of
+Do this with **all new test VMs stopped** and no other workloads on the test node. Use stage 1 of
 Step 4: the node is **uncordoned** and carries only your temporary `memory-host` taint, so the pool
-can drain, reboot and converge while other workloads stay away.
+can drain, reboot and finish updating while other workloads stay away.
 
 1. Copy [`optional/swap-machineconfig.template.yaml`](optional/swap-machineconfig.template.yaml).
    Replace `REPLACE_POOL_ROLE`, `REPLACE_SWAP_SIZE_MB` (value only; keep the variable name
    `SWAP_SIZE_MB`). Keep the documented `/var/tmp/swapfile` path.
-   Diff it against the documentation section for the installed version; the page wins.
+   Compare it with the documentation for the installed version. The template adds one
+   ordering rule: check for an existing file before provisioning a new one, so the two
+   services cannot race to activate it. The commands and swap path follow the vendor sample.
 2. `oc create --dry-run=server -f FILE` must succeed. Console: **Compute → MachineConfigs →
    Create MachineConfig**.
 3. Preflight again: pool **Updated** and not **Degraded**; Steps 4-5 still true; window open.
@@ -265,11 +270,19 @@ If the pool goes **Degraded** or a node stays NotReady: stop, add no more nodes,
 
 ![Reference: wait for the approved pool to be Up to date and not Degraded; rendered configuration names are redacted](images/10-memory-pool-updated.png)
 
+![Reference: the host reports 64 GiB of swap. Use the size on your sheet; a nonzero total shows swap is provisioned, not that any VM has paged](images/22-memory-host-swap-ready.png)
+
 ## Step 7. Turn memory density on (console)
 
 1. Open **Virtualization → Settings → Cluster → General settings → Memory density** (or the earlier-console path in Step 3).
-2. Turn on **Configure memory density**; choose the **approved** percentage (the console offers
-   100% to 400% in 25% steps). **Save.**
+2. Turn on **Configure memory density**.
+3. Click **Current memory density** to show **Requested memory density**. Enter the approved
+   percentage in **Slider value input**, then click **Save**.
+   Save is disabled when the value is already applied; leave that value unchanged.
+4. Confirm **Current memory density** shows the approved percentage before starting the VMs.
+
+The **Memory density applied** figure reflects current VM requests across the cluster. It can
+stay below the configured percentage while older VMs keep their original requests.
 
 CLI equivalent, same API version as Steps 0-2. A **merge patch** creates the parent object if it
 is absent and leaves every other field alone (125 is an example, not a recommendation):
@@ -347,14 +360,42 @@ oc exec -n NAMESPACE POD_NAME -c compute -- \
    it, and the **actual overhead** (total request minus that component). Where a same-size VM
    launched before density was enabled is running, compare its request. If the guest-memory
    component was not reduced, memory density is not in effect: stop; Blocked.
-6. Record node **allocatable**. `free -m` on the node shows swap; host swap metrics respond
-   (admin guide, metrics).
+6. Record node **allocatable** and check the memory available to pods as well as the node.
+   Kubelet can evict a VM when its pod allocation is full while Linux still reports spare RAM.
+   This read-only command shows both kubelet readings in MiB:
+
+~~~sh
+oc get --raw /api/v1/nodes/TESTNODE/proxy/stats/summary | \
+  jq '.node | {sample_time:.memory.time, node_available_MiB:(.memory.availableBytes/1048576), pod_available_MiB:([.systemContainers[]|select(.name=="pods")|.memory.availableBytes][0]/1048576)}'
+~~~
+
+   Both values and a recent sample time must be present. If either is missing, stop and
+   have the administrator check monitoring. Do not substitute Linux `MemAvailable` for
+   the pod reading. Record a stop floor for **each** on the sheet, above the installed
+   eviction threshold with time to stop the load. Keep eviction protection unchanged.
+
+   Administrator: read the worker's effective thresholds before agreeing those floors:
+
+~~~sh
+oc get --raw /api/v1/nodes/TESTNODE/proxy/configz | \
+  jq '.kubeletconfig | {evictionHard, evictionSoft, evictionSoftGracePeriod}'
+~~~
+
+   Record the `memory.available` thresholds and any grace period. A hard threshold
+   has no grace period. If this read is denied or the memory threshold is missing,
+   stop and ask the cluster administrator to obtain it. Do not infer it from defaults.
 
 **Plan the guests from measured numbers.** Sum the *actual* admitted requests (**Compute →
 Nodes → node → Details → Allocated resources**) and the guest RAM. A **candidate only** at
 125%, from one agreed plan: five competitors of 56 GiB guest RAM plus a 4 GiB measured VM
 (284 GiB of guest RAM). It is not a recommendation: it is valid only if the actual requests fit
 allocatable on your node and the results sheet approves it.
+
+**Record actual ratios.** The density setting is a policy. The admission ratio is what actually ran. Record
+installed (physical) RAM, OS-visible RAM, node allocatable, guest RAM and the summed requests, and
+**name the denominator** with every ratio: guest RAM ÷ installed RAM, guest ÷ OS-visible RAM, or
+requests ÷ allocatable. They differ. Swap size alone does not prove that the node can sustain
+the configured density.
 
 ## Step 9. The memory ramp (administrator)
 
@@ -370,17 +411,54 @@ A frozen or disconnected console is not proof that the hold is healthy.
 
 **Hold duration.** The sheet's `SECONDS` must cover the whole step:
 
-> settle time + (warm-up + measure) × repeats + margin
+> remaining ramp time + settle time + (warm-up + measure) × repeats + margin
 
 With the proposal values (300 s warm-up, 900 s measure, 3 repeats) the repeats alone take
-3 × 1200 = 3600 s, so the hold needs more than that plus settle and margin. Compute it from
+3 × 1200 = 3600 s. Add the time still needed to raise the other holds, then settle and margin. Compute it from
 the sheet's real values; there is no universal number. A hold that ends before the last repeat
 finishes makes that repeat invalid.
+
+**Administrator ramp VM versus participant VMs.** Participants keep the simple foreground
+holds above: one `stress-ng` per console, Ctrl+C to stop, no kill logic and no host settings.
+The **administrator-owned ramp VM** (a VM you created, or one the owner approved for this)
+may use native **background** `stress-ng` jobs so the load can be raised in small, reversible
+steps. If you would rather use a second terminal, that needs only the **approved existing guest
+SSH** access to that VM. Fill `BASE_BYTES`, `SMALL_BYTES` (at most 256 MiB) and `HOLD_SECONDS`
+from the sheet. Each timeout must also cover the remaining ramp, settle and all three repeats.
+
+~~~sh
+HOLD_DIR=$(mktemp -d /tmp/poc-memory.XXXXXX)
+echo "$HOLD_DIR"    # record this directory on the sheet
+# Base hold: start once and leave it untouched. Never stop and refill it near pressure.
+nohup stress-ng --vm 1 --vm-bytes BASE_BYTES --vm-hang 0 --timeout HOLD_SECONDSs --metrics-brief < /dev/null >"$HOLD_DIR/base.log" 2>&1 &
+echo $! >"$HOLD_DIR/base.pid"
+# One small step. Use a NEW step number for each addition: 01, 02, 03...
+STEP=01
+nohup stress-ng --vm 1 --vm-bytes SMALL_BYTES --vm-hang 0 --timeout HOLD_SECONDSs --metrics-brief < /dev/null >"$HOLD_DIR/step-$STEP.log" 2>&1 &
+echo $! >"$HOLD_DIR/step-$STEP.pid"
+jobs -l
+HOLD_PID=$(cat "$HOLD_DIR/step-$STEP.pid")
+ps -ww -o pid,etime,args -p "$HOLD_PID"
+~~~
+
+`nohup` keeps these administrator-owned jobs running if the SSH terminal disconnects.
+Their timeout still applies. Keep the directory and PIDs so you can stop them explicitly.
+
+To release a step, set `STEP` to its recorded number and read its pid as above. Check that
+`ps` still shows **your** `stress-ng` command and the expected bytes. Only then run
+`kill -- "$HOLD_PID"`. Repeat for each owned hold, including `base.pid`, when stopping the load.
+
+A returned prompt does not prove a background hold stopped, and `poc-load status` does not cover
+these. Confirm with `ps` and `pgrep -a stress-ng`, and record each pid and its start and end
+times.
+The last small step is its **own** reversible job: do not reallocate the large base hold
+to make it. Rehearse these commands on the approved guest before the pressure test.
 
 **Before the first hold:**
 
 - Verify the installed `stress-ng` in a small test (a few hundred MiB): check that
-  `--vm-hang 0` holds the memory until `--timeout` ends it, as the installed manual says.
+  `--vm-hang 0` holds the memory until `--timeout` ends it, then memory returns to the guest
+  and host. Use the guest and launcher counters already open for this check.
   If it does not, the cold-hold method is **Blocked**.
 - Record, for each guest, whether guest swap is on and its size. **Leave guest swap as found**:
   do not enable, disable or reconfigure it on an existing VM. Record it on the sheet.
@@ -395,7 +473,15 @@ phase, the measured VM of the memory phase needs **its own** baseline, loaded an
 on that same VM and worker. Do not present CPU and memory results from different fixtures as one
 unchanged VM. The CPU fixture is not moved or resized. A memory baseline is valid with the
 competitors Running but **idle** (no holds): it shows the configured admission ratio, not actual
-memory pressure. If density was already set to 125 during preparation, do not call that baseline
+memory pressure. All memory VMs stay **Running and idle** for the baseline, and stay **Running** after the holds
+stop, through recovery. All 9 runs (3 baseline, 3 loaded, 3 recovery) use the same measured VMI
+`metadata.uid`, the same settings and the same command. A VM restart or migration invalidates the comparison.
+The recovery settle time starts only after memory was actually released (confirm it from
+the guest and the launcher, not from a returned prompt). Residual swap may remain; do not force
+`swapoff`. Tell apart *cold pages left in swap* (swap used, but the swap-in/out rate is flat) from
+*sustained swap I/O during the measurement* (rate above zero while it runs). Record both;
+swap used alone does not show how much paging occurred during a measurement.
+If density was already set to 125 during preparation, do not call that baseline
 "density 100"; record the density value that was in effect.
 
 **Ramp, one guest at a time, starting conservative:**
@@ -408,27 +494,70 @@ memory pressure. If density was already set to 125 during preparation, do not ca
    Near pressure, use small increases that leave enough headroom for the next allocation
    and the time needed to stop it. Available RAM alone does not predict when paging starts.
    Wait for memory use to level out before measuring; an active command may still be filling.
-3. **Before each measured repeat, check that every hold of the step is still active** (all
-   consoles still running the command, no prompt returned). Check again when the repeat ends.
+3. **Before each measured repeat, check that every hold is still active.** For foreground
+   holds, the console must still be running the command. For background holds, check the
+   recorded PIDs with `ps` and confirm the expected commands. Check again when the repeat ends.
    If any hold expired or stopped, **mark that repeat invalid** on the sheet and do not call it
-   loaded. Restart the holds, wait the settle time, and run the repeat again.
-4. **Stop adding load at the first attributable swap:** node swap-out counters rise **and**
-   a launcher's `compute` container shows swap above zero. Hold there; that is the data point.
-   Do not "push a little more".
+   loaded. Stop the owned holds and confirm headroom has returned before beginning another
+   conservative ramp. Do not refill a large hold while the node is under pressure.
+4. **Freeze the ramp as soon as host swap-out counters rise.** Add no more memory while
+   checking which VM paged. Confirm a launcher's `compute` container shows swap above zero;
+   that ties the paging to a VM. Hold there for the loaded runs. Do not add another step
+   while waiting for the charts to refresh.
+   If fresh readings show only platform services paged and every test VM still has zero
+   swap, record that separately. The administrator may continue one small step at a time
+   only after the counters settle and both memory floors still leave the agreed margin.
+   Freeze and check attribution again on any new swap-out. Stop if attribution is unclear.
 5. Record the memory each guest actually touched (guest `free -m` used, and the launcher
    `compute` container working set or RSS), not only the `--vm-bytes` requested.
 
+If the next step would leave too little time or memory to stop safely, release the holds.
+Record that the VMs were admitted but paging was not observed within the agreed limits.
+Do not lower the limits or force paging to obtain a result.
+
 **Stop the test load** (abort) on any of: swap used above the sheet's limit; node available
-memory under the sheet's floor; an OOM kill, eviction, VM restart or migration; a node
+memory or pod-available memory under its sheet floor; an OOM kill, eviction, VM restart or migration; a node
 NotReady; or missing graphs. Abort order:
 
-1. In each guest console press **Ctrl+C** and confirm the prompt returns: the foreground
-   `stress-ng` stops only itself. Do this for **every** memory hold you own.
-2. If a console is unreachable or Ctrl+C does not stop the hold, stop **only** the VMs you created (**Actions → Control →
+1. Stop **every** memory hold you own: press **Ctrl+C** for a foreground hold, or use
+   the recorded PID and `kill` procedure above for a background hold. Confirm those processes ended.
+2. If a console is unreachable or a hold does not stop, stop **only** the VMs you created (**Actions → Control →
    Stop**), after checking name and UID against your creation record.
    A stop request can remain pending on an unresponsive worker. Wait for **Stopped**;
    do not assume its memory was released. Use the owner's node-recovery procedure if needed.
 3. Run the headroom gate (Step 10) before changing anything else.
+
+**Administrator: watch from the jump host.** Open these before adding load, replacing
+`TESTNODE` with the approved worker. The first two commands open temporary debug pods to read host metrics; the third reads the node API:
+
+~~~sh
+# Terminal 1: wa = I/O wait percent; swpd = swap used in KiB.
+oc debug node/TESTNODE -- chroot /host vmstat -w -t 1
+# Terminal 2: read available on the Mem row (MiB).
+oc debug node/TESTNODE -- chroot /host free -m -w -s 1
+~~~
+
+In another terminal, watch kubelet's **node and pod** readings. A request each second does
+not guarantee a new sample each second: check the printed time. Stop if it becomes older
+than the missing-sample limit on the sheet.
+
+~~~sh
+watch -n 1 'oc get --raw /api/v1/nodes/TESTNODE/proxy/stats/summary | jq ".node | {sample_time:.memory.time, node_available_MiB:(.memory.availableBytes/1048576), pod_available_MiB:([.systemContainers[]|select(.name==\"pods\")|.memory.availableBytes][0]/1048576)}"'
+~~~
+
+Either kubelet reading reaching its stop floor is a stop, even if `free` still shows room.
+An eviction or **MemoryPressure=True** ends the comparison; do not resume that ramp.
+
+Ignore the first `vmstat` data row, which includes averages since boot. Use the following
+one-second samples. Keep all three readings visible and use **Ctrl+C** to close them after the run. The console charts save the
+longer trend; their refresh interval may be too slow for your stop rule.
+
+Judge limits from fresh samples, frequent enough to measure the agreed I/O-wait duration. An observer **off the
+node** treats missing metrics or samples older than the agreed limit as a stop. Guest Ctrl+C or a VM Stop may fail if
+the node is unresponsive; SSH or `timeout` cannot be relied on to protect a stalled host. Then
+the owner, not this case, uses a worker-only BMC graceful shutdown and the watchdog recovery. Do not
+force an OOM, tune thresholds or disable the watchdog. Use the stop limits and sample period
+agreed on your results sheet.
 
 Also stop for worker **MemoryPressure** or **DiskPressure**, sustained memory-pressure
 stalls or device latency above the agreed limit, or a swap-rate surge approaching the installed
@@ -448,12 +577,15 @@ Do these in order.
    - **Memory holds:** in each guest console, either let the hold finish or press **Ctrl+C**,
      and confirm the prompt returned. Do this for each hold you own. As a read-only
      double-check, `pgrep -a stress-ng` in the guest should print nothing.
+   - **Ramp VM background holds:** stop only the pids you recorded, after checking each is still the
+     matching command (Step 9), then confirm with `pgrep -a stress-ng`.
    - **CPU helper:** `poc-load stop`, then `poc-load status` should say `NOT running`, in each
      competitor that ran CPU load. This does not touch memory holds.
    - Then stop only the **new fixture VMs you created**. Existing reused VMs stay running.
    Memory used by swap does **not** necessarily drain by itself: idle pages can stay in swap.
 2. **Headroom gate.** Swapped-out pages must fit back in RAM if swap goes away:
    `MemAvailable` (`free -m`, "available") must exceed swap *used* with the sheet's margin.
+   Kubelet's node and pod readings must also be above their agreed floors, with no MemoryPressure.
    If it does not, stop **only the new fixture VMs you own** that are still running on that node
    and check again. Do not stop other workloads to make room. If headroom is still
    insufficient, do not remove swap: leave it in place and escalate to the cluster owner.
@@ -483,7 +615,7 @@ Do these in order.
    record what you see and ask the owner or Red Hat support. Do not delete or patch it.
 5. **Remove the swap configuration you added**, if you added one. First protect the node again:
    add your temporary taint (`perf-lab.example.com/memory-host=true:NoSchedule`) and **uncordon**
-   it so the pool can converge. Then delete **only** the
+   it so the pool can finish updating. Then delete **only** the
    MachineConfig you created (**Compute → MachineConfigs →** `90-...-perf-swap` **→ Delete**).
    The pool reboots node by node. Wait for **Updated**, and confirm the node's `currentConfig`
    is a rendering without your MachineConfig. If the client already provided swap (Step 5),

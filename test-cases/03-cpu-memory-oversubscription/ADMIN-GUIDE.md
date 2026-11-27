@@ -6,8 +6,8 @@
 > production capacity ratio is implied.
 
 
-The customer follows the [walkthrough](RUNBOOK.md). This guide holds everything
-complex: approvals, capacity maths, tools, isolation, metrics, memory prerequisites, reset.
+Prepare the VMs, tools and monitoring here. Then use the [walkthrough](RUNBOOK.md)
+to run the test. The cleanup steps are at the end of this guide.
 
 <a id="prepare"></a>
 
@@ -400,6 +400,7 @@ and filter the other host series to that same instance. Never average all hosts.
 | Guest steal and load | guest `poc-stats` (`cpu_steal_ticks`, `loadavg`) |
 | Scheduler CPU requests on node | `sum(kube_pod_container_resource_requests{resource="cpu",node="NODE"})` vs `kube_node_status_allocatable{resource="cpu",node="NODE"}` |
 | Host memory | `node_memory_MemTotal_bytes{instance="INSTANCE"}`, `node_memory_MemAvailable_bytes{instance="INSTANCE"}` |
+| Pod allocation headroom (bytes; stop before this approaches zero) | `max by(node)(kube_node_status_allocatable{resource="memory",node="NODE"}) - max by(node)(container_memory_working_set_bytes{node="NODE",id="/kubepods.slice"})` |
 | Host memory used estimate (%) | `100 * (1 - sum(node_memory_MemAvailable_bytes{instance="INSTANCE"}) / sum(node_memory_MemTotal_bytes{instance="INSTANCE"}))` |
 | Memory pressure | `rate(node_pressure_memory_waiting_seconds_total{instance="INSTANCE"}[1m])` (PSI only, as above) |
 | Host swap use and I/O (swap-in/out rates below are pages/sec) | `node_memory_SwapTotal_bytes{instance="INSTANCE"}`, `node_memory_SwapFree_bytes{instance="INSTANCE"}`, `rate(node_vmstat_pswpin{instance="INSTANCE"}[1m])`, `rate(node_vmstat_pswpout{instance="INSTANCE"}[1m])` |
@@ -407,6 +408,11 @@ and filter the other host series to that same instance. Never average all hosts.
 | Guest memory / swap | `kubevirt_vmi_memory_available_bytes`, `kubevirt_vmi_memory_usable_bytes`, `kubevirt_vmi_memory_swap_in_traffic_bytes`, `kubevirt_vmi_memory_swap_out_traffic_bytes` (guest swap, not host swap; inspect the exported type before calculating changes) |
 | Evictions, OOM kills | `kube_pod_status_reason{reason="Evicted"}`, `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}` |
 | Migrations | **Virtualization → Migrations / events**, or `oc get vmim -A`; metric prefix `kubevirt_vmi_migration` |
+
+The pod-headroom query was checked on 4.22. Verify both series on the installed version.
+Use kubelet's direct node and pod readings for the fast stop check
+([memory procedure, Step 8](MEMORY-DENSITY.md#step-8-verify-the-effective-request-qos-and-cgroup-swap-on-the-launcher)).
+Linux available RAM alone cannot show whether the pod allocation is full.
 
 A run with an unexpected **migration, eviction, OOM kill or restart** is
 invalid: record it, then repeat after the cause is understood.
@@ -427,8 +433,8 @@ windows.
 The memory phase needs memory density **and** swap on the test worker. The full
 step-by-step procedure (pin the API, back up, isolate, approve swap storage, add swap, enable
 in the console, verify, ramp, restore) is in the **[memory density appendix](MEMORY-DENSITY.md)**.
-Do that, then tick. The memory branch has not been run; the procedure is source-based until
-the results sheet holds evidence. In the newer console the **Memory density** control sits under
+Do that, then tick. The latest memory comparison was aborted by a pod-memory eviction before
+the loaded and recovery measurements. In the newer console the **Memory density** control sits under
 **Virtualization → Settings → Cluster → General settings** (shown here switched off; do not
 change it outside the appendix):
 
@@ -486,6 +492,34 @@ name and `metadata.uid`; cleanup (section 11) deletes only those.
   another VM.
 - **Ready before the window.** All new DataVolumes `Succeeded` and PVCs `Bound` before the memory window.
 
+**Optional: one prepared image in the memory project.** Try this before the per-VM workaround
+below, and only if an eligible unchanged VM or an already accessible approved DataSource does not
+solve it. Do not force a copy. As a cluster administrator, copy the approved image **once**
+into the memory project and let every fixture VM reference a DataSource in its own project:
+
+1. The source image PVC must be **stopped and cold**: an approved image, not a running VM's disk.
+   Never stop an unrelated running production VM just to copy it. If the approved DataSource
+   exists, use the PVC it points to (`oc get datasource NAME -n SOURCE_PROJECT -o jsonpath='{.spec.source.pvc}'`).
+2. In the console use **Import YAML** (the **+** button) in the memory project and paste a private copy of
+   [`manifests/00-prepared-memory-image.template.yaml`](manifests/00-prepared-memory-image.template.yaml)
+   with every `REPLACE_*` filled in; `oc create -f` is the CLI equivalent and refuses existing
+   objects. It holds a DataVolume and a DataSource named `prepared-memory-tools`.
+3. Wait for the DataVolume `Succeeded` and the DataSource `Ready`
+   (`oc get dv,datasource,pvc -n "$TEST_PROJECT"`). A console rehearsal of this path succeeded
+   without new Roles or role bindings, but on **NFS Filesystem/ReadWriteMany**; that does not
+   qualify the PowerFlex `vxflexos`/Block/ReadWriteMany path. Record what your storage did.
+4. In each fixture copy, set `REPLACE_SOURCE_NAME` to `prepared-memory-tools` and
+   `REPLACE_SOURCE_PROJECT` to the memory project.
+5. Record the added DataVolume, DataSource and PVC (name, namespace, `metadata.uid`) as yours.
+   At cleanup delete only those, after the new VMs are gone and the owner agrees. Never delete
+   the original image.
+
+![Reference prepared image: Succeeded, progress 100%, and Ready True](images/20-memory-prepared-image.png)
+
+Create the fixture VMs **Stopped**. Start them only after the worker and swap checks are complete.
+
+![Reference memory fixtures created and Stopped before the worker is ready](images/21-memory-fixtures-created.png)
+
 **If the VM cannot create its disk (`Unauthorized` on the DataVolume).** A DataSource being
 `Ready` is not enough: the VM controller creates the disk as the **target** project's `default`
 service account, which may not be allowed to clone from the source namespace. Official
@@ -512,12 +546,13 @@ the installed console documents it; this guide does not claim one.
 
 <a id="reset"></a>
 
-## 11. Reset between takes and clean up
+## 11. Stop the load and clean up
 
 - **Between phases:** for CPU load, run `poc-load stop` inside each competitor and confirm
   `poc-load status` reports `NOT running`. Memory holds are separate foreground `stress-ng`
   commands that `poc-load` cannot see: in each hold's console let it finish or press **Ctrl+C**,
-  and confirm the prompt returned. Leave existing VMs running.
+  and confirm the prompt returned. In the administrator's ramp VM, background holds are stopped
+  only as MEMORY-DENSITY.md Step 9 says. Leave existing VMs running.
   Wait five minutes before the recovery baseline. Stop only optional new lab VMs
   when doing an explicit reset, after stopping their loads. Record remaining
   host swap usage; it does not necessarily drain automatically.
@@ -526,7 +561,7 @@ the installed console documents it; this guide does not claim one.
   untaint anything you did not add. After the density restore, check that the `wasp-agent`
   DaemonSet matches its controller's desired state; do not delete it by hand. Deleting the
   swap MachineConfig leaves the swap file: remove only your own inactive file, as Step 10 says.
-- **Memory fixture (if created):** delete only the VMs, disks and the namespace you created, after checking name and UID against the creation record, as for Path B below.
+- **Memory fixture (if created):** delete only the VMs, disks, any prepared-image DataVolume, DataSource and PVC (VMs first) and the namespace you created, after checking name and UID against the creation record, as for Path B below.
 - **Path A (existing VMs):** remove only the exact helper files you copied for this
   case. Keep any pre-existing tools and other files in `~/poc-bin`. Ask the owner
   before removing packages. Confirm VM sizes and placement still match the sheet.
@@ -551,6 +586,15 @@ resource types before deciding whether to remove it. Never use `--all` for clean
 Restore node labels to the values recorded before setup, using **Compute → Nodes →
 node → Actions → Edit labels**. Remove only labels this case added; preserve
 pre-existing labels. Undo only firewall/NetworkPolicy changes made for this test.
+
+### If the worker stops responding
+
+Stop the test and follow the abort steps in [the memory procedure](MEMORY-DENSITY.md#step-9-the-memory-ramp-administrator).
+Record the run as aborted. A benchmark after a worker restart cannot count as its recovery measurement.
+
+![Earlier aborted attempt: VM paging was observed before the worker stopped responding. None means missing metrics, not zero. This is not a result from the latest rehearsal](images/16-memory-paging.png)
+
+![Earlier aborted run: Not Ready is a stop condition, even when VM paging was observed](images/17-memory-abort.png)
 
 <a id="sources"></a>
 

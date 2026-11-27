@@ -32,7 +32,7 @@ Cases 03 and 04 measure one fixed workload while other VMs add CPU, memory or
 network demand on the same worker or link. They **prefer existing VMs, unchanged**:
 a short suitability checklist, and guest helper commands copied in only if
 missing. New lab VMs are an optional fallback. No ratio is claimed safe. The optional host-memory overcommit phase needs the memory-density setting
-and node swap. Its administrator procedure is deferred.
+and node swap. Follow the linked memory-density procedure before running it.
 
 Case 05 measures IOPS, latency and throughput using an existing VM and its existing
 workload, or an optional bounded read-only fio workload. PowerFlex measurements are
@@ -56,7 +56,7 @@ Each case's administrator guide shows how. Administrator commands use standard `
 
 ## Status
 
-The target is OpenShift 4.21.31. The rehearsals below ran on OpenShift 4.22, mostly
+The target is OpenShift 4.21. The rehearsals below ran on OpenShift 4.22, mostly
 on alternate shared storage. None of them proves the client's 4.21 cluster or its
 storage.
 
@@ -69,9 +69,10 @@ storage.
   held for review; an earlier rehearsal completed fixture cleanup. Alternate shared
   storage was used.
 - **Case 03:** CPU baseline, time-limited competing load, stop checks and recovery were
-  exercised. Actual CPU oversubscription was not established. A bounded memory
-  rehearsal confirmed host and VM paging, then was aborted after exceeding a stop
-  limit and losing worker responsiveness. Loaded and recovery memory benchmarks
+  exercised. Actual CPU oversubscription was not established. Memory preparation,
+  swap activation across boots, guest-RAM admission overcommit and three memory
+  baselines were exercised. The latest ramp was aborted by a pod-allocation memory
+  eviction before test-VM paging was observed. Loaded and recovery memory benchmarks
   were not completed; no safe ratio is established.
 - **Case 04:** a bounded cross-host UDP baseline, competing traffic, stop checks and
   recovery were exercised. TCP had only a short connectivity check. Physical-link
