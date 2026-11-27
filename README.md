@@ -70,10 +70,9 @@ storage.
   storage was used.
 - **Case 03:** CPU baseline, time-limited competing load, stop checks and recovery were
   exercised. Actual CPU oversubscription was not established. Memory preparation,
-  swap activation across boots, guest-RAM admission overcommit and three memory
-  baselines were exercised. The latest ramp was aborted by a pod-allocation memory
-  eviction before test-VM paging was observed. Loaded and recovery memory benchmarks
-  were not completed; no safe ratio is established.
+  swap activation across boots and nine memory measurements were exercised. The
+  loaded phase assigned more guest RAM than the host had installed. Host and test-VM
+  swap use stayed at zero; no safe ratio or paging-performance result is established.
 - **Case 04:** a bounded cross-host UDP baseline, competing traffic, stop checks and
   recovery were exercised. TCP had only a short connectivity check. Physical-link
   oversubscription and full TCP measurements remain unverified.

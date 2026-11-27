@@ -16,20 +16,24 @@
 | Creating a VM (templates, boot sources, DataSources) | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/creating-a-virtual-machine) | [4.22 book: Creating virtual machines](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html-single/virtualization/index) | Path B VM shape |
 | Advanced VM creation (cloud-init, storage) | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/advanced-vm-creation) | [4.22 book: Creating virtual machines](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html-single/virtualization/index) | cloud-init limits, volumes |
 
-## Memory swap: documented path and open question
+## Memory swap: which procedure to use
 
 - **Documented VM-specific path:** the OpenShift Virtualization section above (5.7 in the 4.21
   and 4.22 books) describes memory density with the `wasp-agent` (DaemonSet in `openshift-cnv`)
   and a swap procedure. Case 03 follows it.
-- **Unresolved conflict:** the generic OpenShift Container Platform 4.21 documentation lists
-  node swap as removed. This repository has not resolved how that fits the Virtualization
-  section and does not state the support or Technology Preview status. Use the installed
-  release's Virtualization procedure; ask Red Hat if its applicability is unclear.
-- The latest 4.22 rehearsal exercised the root-filesystem swap template, including initial
-  provisioning and later-boot activation. Its ramp was aborted by kubelet's pod-allocatable
-  memory eviction before test-VM paging was observed. Loaded and recovery benchmarks were
-  not completed; see
-  [verification limits](README.md#walkthrough-verification).
+- **Intended use:** the 4.21 and 4.22 density section targets underused VM workloads, so
+  zero VM swap in a valid comparison is a measured result, not a defect.
+- **Which procedure to use:** follow *Configuring higher VM workload density* for your
+  installed OpenShift Virtualization release. Both 4.21 and 4.22 describe provisioning
+  worker swap and making it available to VMs through `wasp-agent`. The
+  [4.21 platform release notes](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/release_notes/ocp-4-21-release-notes)
+  separately record the removal of swap-memory configuration. This guide follows the
+  VM-specific procedure above; it does not assign a support or Technology Preview status.
+- The latest 4.22 rehearsal exercised the root-filesystem swap template, including
+  initial provisioning and activation after a later boot, then completed baseline,
+  loaded and recovery measurements with three repeats each. Host and test-VM swap use
+  stayed at zero. See [verification limits](README.md#walkthrough-verification).
+
 
 ## Key applicability differences
 

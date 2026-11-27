@@ -8,8 +8,8 @@ Date: ______   Customer: ______   Administrator: ______
 OCP: ______   Virtualization: ______   Test worker: ______
 Approved by (Red Hat / client) and date: ______   Abort rule and contact: ______
 Warm-up ____ s   Measure ____ s   Repeats ____ (proposal 300 / 900 / 3)
-Required memory result: admission/performance comparison / test-VM pages in host swap: ______
-Record these separately; admission alone cannot pass a VM-paging requirement.
+Required memory result: performance comparison under assigned guest RAM above physical RAM (VM paging is recorded as an observation, not a pass condition): ______
+Record allocation overcommit, VM paging and performance validity separately.
 
 ## VMs used (as found; do not change them)
 
@@ -33,11 +33,13 @@ Changes made to any VM or guest (tools added, anything else) and how they were u
 | Running-VM vCPU: baseline / CPU phase / memory phase | |
 | vCPU : logical CPU and vCPU : physical core, per phase | |
 | Pod CPU requests and pod memory requests, per phase | |
-| Guest configured RAM (sum), per phase | |
-| **Admission ratio:** total running guest RAM ÷ installed physical RAM, per memory step | |
+| VMs Running per phase (baseline / loaded / recovery) and who changes their power state | |
+| Guest configured RAM (sum), per phase (for example baseline 4 GiB / loaded 284 GiB / recovery 4 GiB) | |
+| **Actual assigned ratio** per phase, with its denominator (physical / OS-visible / allocatable); the HCO setting is not this ratio | |
+| **Admission ratio:** total running guest RAM ÷ installed physical RAM, per memory step (assigned, not resident) | |
 | Other ratios, if used: guest RAM ÷ OS-visible RAM; pod requests ÷ allocatable (label each separately) | |
 | Installed RAM / OS-visible RAM / allocatable memory | |
-| Measured VMI `metadata.uid` (same for all 9 runs; restart or migration = invalid) | |
+| Measured VMI `metadata.uid`, node and resources (same for all 9 runs; restart or migration = invalid). Competitor VMI ids may differ between phases | |
 | Actual launcher memory request, reduced guest-memory component, overhead and node allocatable (as measured) | |
 | Actual launcher QoS class; cgroup swap allowance (`memory.swap.max`) and `memory.swap.current` | |
 | Guest swap as found, per VM (on/off, size; not changed on reused VMs) | |
@@ -67,9 +69,11 @@ Changes made to any VM or guest (tools added, anything else) and how they were u
 
 ## Memory ramp (one row per step; values come from the approver, not this form)
 
-Record admission, host paging and workload performance separately.
+Record admission, VM paging and workload performance separately. VM paging is **Observed**,
+**Not observed** (zero swap with good metrics) or **Blocked** (feature or metrics unavailable).
+Resident payload, node working set, guest swap and host swap are separate observations.
 
-| Step | Guests holding / bytes each / duration | Memory actually touched (guest used; launcher working set) | Admission: guest RAM ÷ physical | Holds active before and after each repeat? | Host paging: node swap-out rising? launcher swap > 0? | Measured-VM memory result | Stop rule hit? |
+| Step | Guests holding / bytes each / duration | Memory actually touched (guest used; launcher working set) | Admission: guest RAM ÷ physical | Holds active before and after each repeat? | VM paging: Observed / Not observed / Blocked (node swap-out rising? launcher swap > 0?) | Measured-VM memory result | Stop rule hit? |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | | | | | | | |
 | 2 | | | | | | | |
@@ -79,7 +83,7 @@ Ramp VM background holds (pid, bytes, timeout, start/stop time, still matching c
 Residual swap after release: cold pages only / sustained swap I/O during a measurement: ______
 Hold duration = remaining ramp + settle + (warm-up + measure) × repeats + margin: ______ s
 A repeat with an expired hold is invalid; mark it in the measured-workload table.
-First step with attributable host swap: ______   Abort used? ______
+First step with attributable host swap (or "none"): ______   Stopped at planned safe headroom? ______   Abort used? ______
 
 ## Measured workload
 
@@ -118,5 +122,7 @@ CPU and memory bandwidth results do not establish application performance.
 | Baseline stable (repeats agree) | | |
 | CPU contention effect observed / not observed | | |
 | Memory contention effect observed / not observed / Blocked | | |
+| VM paging Observed / Not observed / Blocked (separate from performance) | | |
+| Loaded runs valid: stable agreed load, safe headroom, no eviction, OOM, restart or migration | | |
 | Recovery returns to baseline | | |
 | Restored every shared setting changed | | |

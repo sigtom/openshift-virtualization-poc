@@ -29,7 +29,9 @@ For each comparison, use **one measured VM on one isolated worker**: measure it
 at baseline, under competing load, and after stopping that load. Keep that VM and
 its benchmark unchanged. CPU and memory can use different fixtures, but each
 needs its own baseline and recovery results. Run the memory comparison only
-after the administrator has prepared memory density and host swap.
+after the administrator has prepared memory density and host swap. It compares performance
+with more guest RAM assigned than physical RAM; VM paging is recorded as an observation
+and zero VM swap is a valid result.
 Proposal: 5 min warm-up, 15 min measure, 3 repeats, all negotiable.
 
 Tools: `sysbench` (CPU benchmark), `stress-ng` (bounded competitor load that
@@ -61,7 +63,7 @@ first. Nothing is labelled, started or reconfigured automatically.
   competitor count before the run. Default is no overcommit.
 - Allocation ratios are scheduling numbers, not utilization; both are recorded
   per host, never as cluster averages.
-- Memory contention needs memory density (a **cluster-wide** HyperConverged setting)
+- This memory procedure uses memory density (a **cluster-wide** HyperConverged setting)
   and swap on a worker-only pool (existing if verified exclusive, or a custom one) on the fast
   root filesystem, as approved by the storage owner. The [appendix](MEMORY-DENSITY.md) gives the
   procedure and an optional template targeting only that pool; nothing is applied
@@ -78,18 +80,25 @@ competing CPU load, stop checks and recovery were exercised with three repeats
 per phase. The screenshots are redacted reference output. This rehearsal did
 **not** establish CPU oversubscription or a safe ratio.
 
-The latest OpenShift 4.22 memory rehearsal exercised the root-filesystem swap
-MachineConfig, initial provisioning and later-boot activation, density and new VM
-placement. Fresh fixtures were created through the console from a prepared image
-on NFS Filesystem/RWX storage. Running guest RAM exceeded physical RAM, and three
-memory baseline repeats completed.
+The latest OpenShift 4.22 memory rehearsal exercised root-filesystem swap preparation,
+initial provisioning and activation after a later boot. Fresh fixtures were created
+through the console from a prepared image on NFS Filesystem/RWX storage.
 
-**The ramp was aborted:** kubelet evicted a VM when pod-allocatable memory reached
-its eviction threshold. Linux still reported spare RAM. A small amount of platform
-paging was observed; all six test-VM compute containers reported zero swap at the
-attribution check. Loaded and recovery benchmarks were **Not run**. This does not
-establish a successful VM-paging comparison or a safe ratio. Earlier aborted
-attempts are not qualifying comparison results either.
+All nine memory measurements completed: three at baseline, three under load and
+three after recovery. The measured VM kept the same identity, size and worker.
+During the loaded phase, six Running VMs had 284 GiB assigned on a host with
+256 GiB installed RAM (about 1.11:1). Five competitors held 220 GiB in total.
+After the holds stopped and the five new competitors were Stopped, recovery used
+the measured VM alone again.
+
+Host and test-VM swap use stayed at zero. This is a performance comparison under
+assigned-memory overcommit; it does not measure performance during paging or
+establish a safe production ratio. Earlier aborted attempts remain failed and
+are excluded from this comparison.
+
+Load release used console **Stop** on the new competitors. Foreground Ctrl+C did
+not stop the hold in the reconnected serial session; the administrator’s SSH stop
+fallback was exercised separately with a small hold.
 
 The new VMs were stopped and the density value restored. Swap and the worker were
 retained for review; full swap removal was not repeated. OpenShift 4.21 execution,

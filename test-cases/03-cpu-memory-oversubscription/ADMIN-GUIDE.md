@@ -115,7 +115,19 @@ The list must not already contain `poc-sysbench`, `poc-load` or `poc-stats`. If 
 does, stop: they are someone else's files. Then, for each of the three files: type `cat > ~/poc-bin/poc-sysbench` (use the
 file's name), press **Enter**, paste that file's full contents from `guest-tools/`,
 press **Enter**, then **Ctrl+D**. If SSH access to the guest already exists, you can
-copy the files with `scp` instead; do not enable SSH just for this. Then:
+copy the files with `scp` instead; do not enable SSH just for this.
+
+**Optional jump-host copy:** if `virtctl` is already installed and `oc` is signed in,
+run the following from the repository folder. Replace `PROJECT`, `EXISTING_KEY`,
+`GUEST_USER` and `VM` with your existing access values. The VM must be Running.
+
+```sh
+mkdir -p ./poc-bin
+cp test-cases/03-cpu-memory-oversubscription/guest-tools/poc-* ./poc-bin/
+virtctl scp -n PROJECT -i ~/.ssh/EXISTING_KEY --recursive ./poc-bin GUEST_USER@vmi/VM:.
+```
+
+Repeat for each VM that needs the helpers. Then, **inside each guest**:
 
 ```sh
 chmod 0755 ~/poc-bin/poc-sysbench ~/poc-bin/poc-load ~/poc-bin/poc-stats
@@ -248,7 +260,7 @@ Record **for the test host** (not averages), before and after each phase:
 | vCPU allocated | sum of running VMs' sockets × cores × threads on this node | **Per host.** Competitor VMs here = 2 vCPU each |
 | vCPU : logical CPU, vCPU : physical core | allocated vCPU ÷ the two values above | Report both ratios |
 | Pod CPU / memory *requests* | **Node → Details → Allocated resources**, or `oc describe node N` | This is what the scheduler counts |
-| Guest configured RAM | sum of `domain.memory.guest` of running VMs | 4 GiB each here |
+| Guest configured RAM | sum of `domain.memory.guest` of running VMs | Use each VM’s actual size; memory fixtures can be larger |
 | Guest usable RAM, active working set | in guest `poc-stats`: MemTotal, MemAvailable; working set ≈ MemTotal − MemAvailable | |
 | Swap pressure | host swap-in/out rates (section 9) and guest `pswpin/pswpout` | |
 
@@ -399,15 +411,34 @@ and filter the other host series to that same instance. Never average all hosts.
 | Guest vCPU delay / I/O wait | `rate(kubevirt_vmi_vcpu_delay_seconds_total[1m])` measures scheduler delay/steal; `kubevirt_vmi_vcpu_wait_seconds_total` is I/O wait. Filter by VM and project. Scheduler statistics may be absent; do not change node kernel arguments for this test |
 | Guest steal and load | guest `poc-stats` (`cpu_steal_ticks`, `loadavg`) |
 | Scheduler CPU requests on node | `sum(kube_pod_container_resource_requests{resource="cpu",node="NODE"})` vs `kube_node_status_allocatable{resource="cpu",node="NODE"}` |
+| Assigned guest RAM (GiB) | `sum(kubevirt_vmi_memory_domain_bytes{namespace="PROJECT",node="NODE"}) / 1024^3` |
 | Host memory | `node_memory_MemTotal_bytes{instance="INSTANCE"}`, `node_memory_MemAvailable_bytes{instance="INSTANCE"}` |
 | Pod allocation headroom (bytes; stop before this approaches zero) | `max by(node)(kube_node_status_allocatable{resource="memory",node="NODE"}) - max by(node)(container_memory_working_set_bytes{node="NODE",id="/kubepods.slice"})` |
 | Host memory used estimate (%) | `100 * (1 - sum(node_memory_MemAvailable_bytes{instance="INSTANCE"}) / sum(node_memory_MemTotal_bytes{instance="INSTANCE"}))` |
 | Memory pressure | `rate(node_pressure_memory_waiting_seconds_total{instance="INSTANCE"}[1m])` (PSI only, as above) |
-| Host swap use and I/O (swap-in/out rates below are pages/sec) | `node_memory_SwapTotal_bytes{instance="INSTANCE"}`, `node_memory_SwapFree_bytes{instance="INSTANCE"}`, `rate(node_vmstat_pswpin{instance="INSTANCE"}[1m])`, `rate(node_vmstat_pswpout{instance="INSTANCE"}[1m])` |
+| Host swap used (GiB) | `sum(node_memory_SwapTotal_bytes{instance="INSTANCE"} - node_memory_SwapFree_bytes{instance="INSTANCE"}) / 1024^3` |
+| Host swap provisioned/free and I/O (swap-in/out rates below are pages/sec) | `node_memory_SwapTotal_bytes{instance="INSTANCE"}`, `node_memory_SwapFree_bytes{instance="INSTANCE"}`, `rate(node_vmstat_pswpin{instance="INSTANCE"}[1m])`, `rate(node_vmstat_pswpout{instance="INSTANCE"}[1m])` |
 | Major faults, OOM | `rate(node_vmstat_pgmajfault{instance="INSTANCE"}[1m])`, `node_vmstat_oom_kill{instance="INSTANCE"}` |
 | Guest memory / swap | `kubevirt_vmi_memory_available_bytes`, `kubevirt_vmi_memory_usable_bytes`, `kubevirt_vmi_memory_swap_in_traffic_bytes`, `kubevirt_vmi_memory_swap_out_traffic_bytes` (guest swap, not host swap; inspect the exported type before calculating changes) |
 | Evictions, OOM kills | `kube_pod_status_reason{reason="Evicted"}`, `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}` |
 | Migrations | **Virtualization → Migrations / events**, or `oc get vmim -A`; metric prefix `kubevirt_vmi_migration` |
+
+<a id="assigned-memory"></a>
+
+To show the assigned RAM, open **Observe → Metrics**, select **All Projects**,
+paste the assigned-guest-RAM query with your project and node, and click **Run queries**.
+The result is in GiB. Compare it with the host’s installed physical RAM from the
+hardware inventory. The example shows 284 GiB assigned on a 256 GiB host (about 1.11:1);
+use your own sizes and approved ratio. Assigned RAM is different from memory currently used.
+
+![Assigned guest RAM rises from the measured VM alone to all six VMs; result 284 GiB](images/24-memory-assigned-total.png)
+
+The host graphs show a different measurement: RAM still available, and swap space used.
+Both examples below are in GiB. A valid zero is a result; an empty graph is missing data.
+
+![Reference Linux available RAM as the holds fill. This is not a stop floor; use kubelet pod-available memory for the stop check](images/25-memory-available-loaded.png)
+
+![Host swap use remains zero while the VMs are overcommitted](images/26-memory-swap-zero.png)
 
 The pod-headroom query was checked on 4.22. Verify both series on the installed version.
 Use kubelet's direct node and pod readings for the fast stop check
@@ -433,17 +464,19 @@ windows.
 The memory phase needs memory density **and** swap on the test worker. The full
 step-by-step procedure (pin the API, back up, isolate, approve swap storage, add swap, enable
 in the console, verify, ramp, restore) is in the **[memory density appendix](MEMORY-DENSITY.md)**.
-Do that, then tick. The latest memory comparison was aborted by a pod-memory eviction before
-the loaded and recovery measurements. In the newer console the **Memory density** control sits under
+Follow it before completing the checklist. The latest 4.22 rehearsal completed all nine
+memory measurements; see [verification limits](README.md#walkthrough-verification).
+In the newer console the **Memory density** control sits under
 **Virtualization → Settings → Cluster → General settings** (shown here switched off; do not
 change it outside the appendix):
 
 ![Locate Memory density in the console settings; do not enable it during inspection](images/05-memory-settings.png)
 
 Record three things separately on the sheet (details in the appendix): *admission* (total running
-guest RAM above physical RAM, a measured ratio, not the HCO percentage), *host paging*
-(swap-out counters rising **and** swap above zero on at least one launcher `compute`
-container), and *workload performance*. Small RSS or guest-pressure checks are
+guest RAM above physical RAM, a measured ratio, not the HCO percentage), *VM paging* as
+Observed, Not observed or Blocked (zero swap with good metrics is Not observed, a valid
+result; Blocked means the feature or metrics are unavailable), and *workload performance*.
+Swap must be provisioned with a non-zero allowance; current swap use need not be above zero. Small RSS or guest-pressure checks are
 administrator-only; participants need only the one readiness line.
 
 - [ ] Memory density already on **(reused, unchanged)** *or* enabled by the appendix, with
@@ -490,6 +523,12 @@ name and `metadata.uid`; cleanup (section 11) deletes only those.
 - **Own baseline.** Fixtures on a different worker than the CPU reference need their own memory
   baseline, loaded and recovery runs on the same VM. Do not combine them with CPU results from
   another VM.
+- **Power states per phase (new fixtures).** Create all of them Stopped. Baseline: only the
+  measured VM Running. Loaded: start only the competitors you own so all are Running before the
+  holds. Recovery: stop the new competitors to release their holds, keep the measured VM
+  Running, then stop it last as a review hold. Record which VMs run and the assigned ratio in each
+  phase on the sheet. Existing VMs (Path A) keep their power states as found; changing one needs
+  the owner's earlier agreement. See [MEMORY-DENSITY.md](MEMORY-DENSITY.md#step-9-the-memory-ramp-administrator).
 - **Ready before the window.** All new DataVolumes `Succeeded` and PVCs `Bound` before the memory window.
 
 **Optional: one prepared image in the memory project.** Try this before the per-VM workaround
@@ -519,6 +558,11 @@ into the memory project and let every fixture VM reference a DataSource in its o
 Create the fixture VMs **Stopped**. Start them only after the worker and swap checks are complete.
 
 ![Reference memory fixtures created and Stopped before the worker is ready](images/21-memory-fixtures-created.png)
+
+After the measured VM starts, copy the three helpers as in
+[Tools and access](#33-tools-and-access-smallest-reversible-change-first) unless
+its image already supplies them. Record their location on the sheet. Memory
+competitors need only `stress-ng`.
 
 **If the VM cannot create its disk (`Unauthorized` on the DataVolume).** A DataSource being
 `Ready` is not enough: the VM controller creates the disk as the **target** project's `default`
@@ -550,11 +594,13 @@ the installed console documents it; this guide does not claim one.
 
 - **Between phases:** for CPU load, run `poc-load stop` inside each competitor and confirm
   `poc-load status` reports `NOT running`. Memory holds are separate foreground `stress-ng`
-  commands that `poc-load` cannot see: in each hold's console let it finish or press **Ctrl+C**,
-  and confirm the prompt returned. In the administrator's ramp VM, background holds are stopped
-  only as MEMORY-DENSITY.md Step 9 says. Leave existing VMs running.
-  Wait five minutes before the recovery baseline. Stop only optional new lab VMs
-  when doing an explicit reset, after stopping their loads. Record remaining
+  commands that `poc-load` cannot see. On existing VMs, let each hold finish or press **Ctrl+C**
+  and confirm the prompt returned. For new memory fixtures, stop only the competitor VMs
+  through **Actions → Control → Stop**; this ends their holds too. Keep the measured VM
+  Running. Confirm the memory is released before starting the recovery wait. Background
+  holds are stopped only as MEMORY-DENSITY.md Step 9 says. Leave existing VMs as found.
+  Wait five minutes after release and the planned competitor stops before measuring recovery.
+  Stop any remaining new fixtures only after their final measurements. Record remaining
   host swap usage; it does not necessarily drain automatically.
 - **Restore** memory density, swap and your node isolation using appendix Step 10 (headroom
   gate first, then roll back) and verify against your private backup. Do not uncordon or
@@ -587,10 +633,36 @@ Restore node labels to the values recorded before setup, using **Compute → Nod
 node → Actions → Edit labels**. Remove only labels this case added; preserve
 pre-existing labels. Undo only firewall/NetworkPolicy changes made for this test.
 
+<a id="stop-memory-hold"></a>
+
+### If Ctrl+C does not stop an existing VM's hold
+
+Keep the VM Running. Open another guest SSH session using the access already on the
+sheet. List your memory holds:
+
+```sh
+ps -u "$USER" -o pid,args | grep '[s]tress-ng --vm'
+```
+
+Find the parent command with the size and timeout you started. Check its PID matches
+the number printed when that hold started. Replace `PID` below with that number:
+
+```sh
+kill -TERM PID
+ps -p PID -o pid,args
+```
+
+Expected: the second command shows no process row. The foreground console returns
+to its prompt. Stop only your own hold; do not use `killall`. Confirm the memory is
+released before the recovery wait. For new disposable competitors, console **Stop**
+is the simpler option.
+
 ### If the worker stops responding
 
 Stop the test and follow the abort steps in [the memory procedure](MEMORY-DENSITY.md#step-9-the-memory-ramp-administrator).
 Record the run as aborted. A benchmark after a worker restart cannot count as its recovery measurement.
+
+Historical troubleshooting images from earlier aborted attempts (not the normal participant path):
 
 ![Earlier aborted attempt: VM paging was observed before the worker stopped responding. None means missing metrics, not zero. This is not a result from the latest rehearsal](images/16-memory-paging.png)
 
