@@ -6,9 +6,9 @@
 > not a failure of the native case. Never claim PowerFlex validated from another backend. Keep real names,
 > versions and output outside the repository. Every step below is untested.
 
-Step order matters: gates → inspect → prerequisites → enable → verify → roll back. Replace `CSM_NS`, `NAME`.
+Do the steps in order: checks → inspect → prerequisites → enable → verify → roll back. Replace `CSM_NS`, `NAME`.
 
-## 1. Gates (all must be yes)
+## 1. Before you start (all must be yes)
 
 - [ ] A PowerFlex backend exists and the volume under test maps exactly to a PowerFlex volume ([mapping](ADMIN-GUIDE.md#mapping)).
 - [ ] CSM is **operator-managed**. If the driver is Helm-managed or CSM is absent: **stop**. Do not deploy a second CSI
@@ -103,13 +103,29 @@ oc get svc SVC -n CSM_NS -o jsonpath='{range .spec.ports[*]}{.name}{"\t"}{.port}
 ~~~
 
 The new pods should be Ready and the service should list a port named `exporter-https` (metrics over HTTPS). If a
-monitor already exists for it, use that. Otherwise add the template as follows.
+monitor already exists for it, use it **read-only**: do not edit, label or delete it, now or at rollback. Otherwise
+add two new objects as follows. Both are created new for this case and are never changed if they already exist.
 
-1. Create a ConfigMap from the **CA file the owner supplies** (a public certificate; no private key, never in the repo):
+Choose two unused names, for example `CA_CM=poc-powerflex-ca-05` and `MON=poc-powerflex-observability-05`, and check:
+
+~~~sh
+CA_CM='poc-powerflex-ca-05'; MON='poc-powerflex-observability-05'
+oc -n CSM_NS get configmap "$CA_CM"          # expected: NotFound
+oc -n CSM_NS get servicemonitor "$MON"       # expected: NotFound
+~~~
+
+If either exists, it belongs to someone else: choose another name.
+
+1. Create a ConfigMap from the **CA file the owner supplies** (a public certificate; no private key, never in the
+   repo). The label is added only after the create succeeds, so an existing object is never labelled:
 
    ~~~sh
-   oc -n CSM_NS create configmap poc-powerflex-ca --from-file=ca.crt=/path/to/owner-supplied-ca.pem
-   oc -n CSM_NS label configmap poc-powerflex-ca perf-lab.example.com/case=05
+   if oc -n CSM_NS create configmap "$CA_CM" --from-file=ca.crt=/path/to/owner-supplied-ca.pem; then
+     oc -n CSM_NS label configmap "$CA_CM" perf-lab.example.com/case=05
+     oc -n CSM_NS get configmap "$CA_CM" -o jsonpath='{.metadata.uid}{"\n"}' > "$HOME/poc-private/storage-iops/ca-configmap.uid"
+   else
+     echo "STOP: not created. Choose another name; leave the existing object alone."
+   fi
    ~~~
 
 2. Find a name the certificate is valid for (**serverName must be one of its Subject Alternative Names**) from the
@@ -119,14 +135,16 @@ monitor already exists for it, use that. Otherwise add the template as follows.
    openssl x509 -in /path/to/owner-supplied-server-cert.pem -noout -ext subjectAltName
    ~~~
 
-3. Copy `optional/powerflex-servicemonitor.template.yaml` into the private folder and replace every `REPLACE_*`:
-   the namespace, one label of the Service (from `--show-labels`), the SAN name, the ConfigMap name and `ca.crt`.
-   Check `grep REPLACE_ "$HOME/poc-private/storage-iops/servicemonitor.yaml"` prints nothing.
-4. Validate, then apply:
+3. Copy `optional/powerflex-servicemonitor.template.yaml` into the private folder as `servicemonitor.yaml` and
+   replace every `REPLACE_*`: the monitor name (`$MON`), the namespace, one label of the Service (from
+   `--show-labels`), the SAN name, the ConfigMap name (`$CA_CM`) and `ca.crt`.
+   Check `grep -n '^[^#]*REPLACE_' "$HOME/poc-private/storage-iops/servicemonitor.yaml"` prints nothing.
+4. Validate, then create it (`create` refuses an existing monitor) and save its UID:
 
    ~~~sh
-   oc apply --dry-run=server -f "$HOME/poc-private/storage-iops/servicemonitor.yaml"
-   oc apply -f "$HOME/poc-private/storage-iops/servicemonitor.yaml"
+   oc create --dry-run=server -f "$HOME/poc-private/storage-iops/servicemonitor.yaml"
+   oc create -f "$HOME/poc-private/storage-iops/servicemonitor.yaml" &&
+   oc -n CSM_NS get servicemonitor "$MON" -o jsonpath='{.metadata.uid}{"\n"}' > "$HOME/poc-private/storage-iops/servicemonitor.uid"
    ~~~
 
 Do not use `insecureSkipVerify`, even if a vendor legacy example does. In **Observe → Targets** (source: user), the
@@ -166,8 +184,14 @@ installed PowerFlex version; find the exact menu there rather than from this gui
 
 ## 7. Roll back (only what you touched)
 
-1. Delete the monitor and the CA ConfigMap you created, after checking each carries your case label:
-   `oc get servicemonitor,configmap -n CSM_NS -l perf-lab.example.com/case=05`, then delete those named objects.
+1. Delete only the monitor and CA ConfigMap this case created, each only if its UID still matches the one you saved.
+   A shared monitor you reused stays untouched.
+
+   ~~~sh
+   P="$HOME/poc-private/storage-iops"
+   [ "$(oc -n CSM_NS get servicemonitor "$MON" -o jsonpath='{.metadata.uid}')" = "$(cat "$P/servicemonitor.uid")" ] && oc -n CSM_NS delete servicemonitor "$MON" || echo "Not deleting the monitor: UID differs or no record"
+   [ "$(oc -n CSM_NS get configmap "$CA_CM" -o jsonpath='{.metadata.uid}')" = "$(cat "$P/ca-configmap.uid")" ] && oc -n CSM_NS delete configmap "$CA_CM" || echo "Not deleting the ConfigMap: UID differs or no record"
+   ~~~
 2. In the console, set only the fields you changed back to the saved values. Remove `enableUserWorkload` only if you
    added it (or delete the ConfigMap only if you created it, with the owner's approval). Keep every other line.
 3. If this case removed `openshift.io/user-monitoring=false`, restore exactly that label and value

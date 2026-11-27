@@ -1,0 +1,143 @@
+# Case 03 - OPTIONAL, ADMINISTRATOR ONLY. Memory-only VM template.
+# Placement and density were rehearsed on 4.22. The vxflexos/Block/RWX disk path
+# remains unverified; the memory performance rehearsal was aborted. See README.md.
+#
+# Use only when no existing eligible VM can hold the memory sizes on the results sheet.
+# Existing VMs and the existing CPU fixture are never resized or moved by this case.
+# This file holds ONE VirtualMachine and no Namespace. Create the project once, separately:
+#     oc create namespace NAMESPACE
+#     oc label namespace NAMESPACE perf-lab.example.com/case=03-memory
+# Then copy this file once per VM to a private folder outside the checkout, fill every
+# REPLACE_* value from the results sheet, and create each VM with `oc create` (it refuses
+# existing objects).
+#
+#   REPLACE_NAMESPACE             the NEW project created above (not the CPU project)
+#   REPLACE_VM_NAME               unique VM name; also used for the disk, hostname and labels
+#   REPLACE_GUEST_RAM             guest RAM from the sheet, for example 56Gi
+#   REPLACE_DISK_SIZE             at least the image size, for example 40Gi
+#   REPLACE_SOURCE_NAME          name of an EXISTING approved image DataSource that already has stress-ng
+#   REPLACE_SOURCE_PROJECT       namespace of that same existing DataSource (name AND namespace)
+#
+# Replace each whole placeholder, including the REPLACE_ prefix.
+#
+# Disk: vxflexos, ReadWriteMany, Block. Confirm support with the storage owner first.
+# Memory: only domain.memory.guest is set. Do NOT add resources.requests or limits: an explicit
+# request replaces the density-derived request. Record the launcher pod's real request.
+# Eviction: evictionStrategy None keeps the cluster default (live migration) from moving this
+# VM to a node without swap. Stop owned fixture VMs before an administrator drains the node.
+# Placement: the VM must run only on the isolated memory host. During the test that node is
+# cordoned (MEMORY-DENSITY.md Step 4) and carries the label perf-lab.example.com/memory-host=true.
+# Only these new fixtures deliberately bypass the test cordon: the explicit toleration of
+# node.kubernetes.io/unschedulable plus the required label affinity below. This is temporary test
+# placement, not a production policy. Existing VMs are not edited. No NoExecute toleration is used.
+# Disk: the VM controller clones the DataSource as the TARGET project's default service account.
+# If DataVolume creation is Unauthorized, see ADMIN-GUIDE.md#memory-fixtures (administrator-only).
+# Starts Halted. Nothing is labelled or started by this file.
+# Console user: same unprivileged serial-console login as manifests/01-measured-vm.yaml.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: REPLACE_VM_NAME
+  namespace: REPLACE_NAMESPACE
+  labels:
+    perf-lab.example.com/case: "03-memory"
+spec:
+  runStrategy: Halted
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: REPLACE_VM_NAME-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: REPLACE_SOURCE_NAME
+          namespace: REPLACE_SOURCE_PROJECT
+        storage:
+          storageClassName: vxflexos
+          accessModes:
+            - ReadWriteMany
+          volumeMode: Block
+          resources:
+            requests:
+              storage: REPLACE_DISK_SIZE
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        perf-lab.example.com/case: "03-memory"
+        perf-lab.example.com/vm: REPLACE_VM_NAME
+        kubevirt.io/domain: REPLACE_VM_NAME
+    spec:
+      architecture: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: perf-lab.example.com/memory-host
+                    operator: In
+                    values:
+                      - "true"
+      tolerations:
+        - key: node.kubernetes.io/unschedulable
+          operator: Exists
+          effect: NoSchedule
+      evictionStrategy: None
+      terminationGracePeriodSeconds: 60
+      domain:
+        cpu:
+          sockets: 1
+          cores: 2
+          threads: 1
+        memory:
+          guest: REPLACE_GUEST_RAM
+        features:
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: REPLACE_VM_NAME-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: REPLACE_VM_NAME
+              ssh_pwauth: false
+              disable_root: true
+              users:
+                - name: cloud-user
+                  lock_passwd: true
+                  shell: /bin/bash
+              write_files:
+                - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+                  content: |
+                    [Service]
+                    ExecStart=
+                    ExecStart=-/sbin/agetty --autologin cloud-user --noclear --keep-baud 115200,57600,38400,9600 %I $TERM
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+                - [systemctl, daemon-reload]
+                - [systemctl, restart, serial-getty@ttyS0.service]

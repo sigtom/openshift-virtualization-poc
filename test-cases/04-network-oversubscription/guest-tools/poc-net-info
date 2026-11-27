@@ -5,4 +5,6 @@ BIND=$(ip -4 -o addr show dev "$IFACE" 2>/dev/null | awk '{split($4,a,"/"); prin
 echo "utc=$(date -u +%FT%TZ)"
 echo "interface=$IFACE guest_address=$BIND mtu=$(cat /sys/class/net/$IFACE/mtu 2>/dev/null) vcpus=$(nproc)"
 echo "(Clients reach a server at its POD IP shown in the console, not at this guest address.)"
+echo "All IPv4 addresses (if the test must use another interface: export POC_BIND=<that address>):"
+ip -4 -o addr show scope global 2>/dev/null | awk '{split($4,a,"/"); print "  " $2 " " a[1]}'
 ip -s link show dev "$IFACE"

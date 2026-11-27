@@ -1,6 +1,7 @@
-# TEMPLATE. Grants FULL cluster-wide administrative privilege to one user. Apply only with
-# agreement on the user receiving full control. cluster-admin is a ClusterRole, so this is a ClusterRoleBinding
-# (there is no namespaced RoleBinding equivalent). Console: User Management > RoleBindings >
+# TEMPLATE. Grants FULL cluster-wide administrative privilege to one user. Use only with
+# agreement on the user receiving full control. Create with `oc create -f` (never apply), so an
+# existing binding with this name is never changed; save the new binding's UID for cleanup.
+# cluster-admin is a ClusterRole, so this is a ClusterRoleBinding (no namespaced equivalent). Console: User Management > RoleBindings >
 # Create binding > Cluster-wide role binding.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

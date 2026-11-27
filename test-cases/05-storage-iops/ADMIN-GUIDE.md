@@ -83,7 +83,9 @@ mapping is **ambiguous: that layer is Blocked**. Size or order is not accepted a
 
 Smallest reversible change, as an ordinary guest user, **no restart**:
 
-1. Transfer `guest-tools/poc-fio` from this repository to the guest account. If SSH is already available,
+1. Transfer `guest-tools/poc-fio` from this repository to the guest account. If no SSH
+   access exists, paste it instead: in the serial console type `cat > ~/poc-fio`, press
+   **Enter**, paste the file's full contents, press **Enter**, then **Ctrl+D**. If SSH is already available,
    from this case directory on the administrator workstation run `scp guest-tools/poc-fio USER@VM_ADDRESS:poc-fio`
    (replace the account and address). Use existing access; do not enable SSH just for this test. Alternatively,
    use an approved image with the helper already present. If `command -v poc-fio`
@@ -97,7 +99,9 @@ Smallest reversible change, as an ordinary guest user, **no restart**:
    export PATH="$HOME/poc-bin:$PATH"
    ~~~
 
-   It needs `python3`, `findmnt` and `lsblk`. The PATH change lasts for this console session.
+   It needs `python3`, `findmnt` and `lsblk`. The PATH change lasts only for this login.
+   Write "helper in `~/poc-bin`" on the sheet; the participant repeats the `export` line
+   after every new login (walkthrough step 4).
 2. If `fio` is missing, install it only through the owner's approved package route (on RHEL 9 usually the
    AppStream `fio` package; verify). The owner can run `sudo dnf install fio`; the test account needs no sudo.
    `fio --version` must print `fio-3.x`; the helper refuses an incompatible tool.
@@ -169,6 +173,19 @@ inside the measured phase (for example `[150s]`), or mark that layer **Blocked**
 Choose the same window for all three workload repeats and re-evaluate each one;
 do not mix window lengths. Save each query, its returned series and evaluation UTC.
 The reference screenshots below illustrate the verified two-minute queries.
+
+**Prepare the three graph links for the sheet** (IOPS, throughput, latency):
+
+1. Open **Observe → Metrics**.
+2. Paste one query from the table below, with `SEL` replaced by your VM and disk.
+   Click **Run queries**.
+3. Set the time range to cover the planned session (for example **Last 1 hour**).
+4. Check the graph shows exactly one line for the mapped disk.
+5. Copy the browser address. It contains the query. Paste it on the results sheet.
+6. Repeat for the other two queries. Open each saved link once to check it.
+
+The links contain only the query, not results. Keep them on the private sheet,
+since they name the VM and project.
 
 | Quantity | Query |
 | --- | --- |

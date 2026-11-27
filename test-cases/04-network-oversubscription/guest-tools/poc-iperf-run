@@ -18,7 +18,7 @@ case $BIND in ''|*[!0-9.]*) echo "Could not find this VM's IPv4 address. Set it:
 args=(-c "$srv" -p "$port" -B "$BIND" -f m)
 [ "$mode" = tcp-rev ] && args+=(-R)
 [ "$mode" = udp ] && args+=(-u -b "${mbps}M" -l 1200)
-out=/var/tmp/poc-iperf-$mode-$(date -u +%Y%m%dT%H%M%SZ).txt
+out=${POC_STATE_DIR:-/var/tmp}/poc-iperf-$mode-$(date -u +%Y%m%dT%H%M%SZ).txt
 {
   echo "== settings: mode=$mode server=$srv port=$port bind=$BIND warmup=${warm}s measure=${meas}s udp_mbps=$mbps"
   if [ "$warm" -gt 0 ]; then
@@ -29,16 +29,17 @@ out=/var/tmp/poc-iperf-$mode-$(date -u +%Y%m%dT%H%M%SZ).txt
     fi
   fi
   echo "== measure start $(date -u +%FT%TZ)"
-  ping -q -c "$meas" -i 1 -w $((meas + 5)) "$srv" >"$out.ping" 2>&1 &
+  ping -q -I "$BIND" -c "$meas" -i 1 -w $((meas + 5)) "$srv" >"$out.ping" 2>&1 &
   pp=$!
   if ! timeout $((meas + 60)) iperf3 "${args[@]}" -t "$meas" -i 30; then echo "FAILED: the measure run failed or timed out."; kill "$pp" 2>/dev/null; exit 1; fi
   echo "== measure end $(date -u +%FT%TZ)"
   wait "$pp"
-  echo "== ping RTT (separate from iperf3; answered by the pod network, may not reach the guest)"
+  echo "== ping RTT from $BIND (separate from iperf3; answered by the pod network, may not reach the guest)"
   tail -n 3 "$out.ping"
 } 2>&1 | tee "$out"
-rc=${PIPESTATUS[0]}
+st=("${PIPESTATUS[@]}"); rc=${st[0]}; trc=${st[1]}
 echo
 if [ "$rc" -ne 0 ]; then echo "RUN FAILED (exit $rc). Do not record these numbers. Log: $out"; exit "$rc"; fi
+if [ "$trc" -ne 0 ] || [ ! -s "$out" ]; then echo "RUN FAILED: the log could not be saved to $out. Do not record these numbers; tell the administrator."; exit 1; fi
 echo "Saved: $out"
-echo "Record from the sender/receiver lines: Mbits/sec at the RECEIVER (goodput), Retr (TCP retransmits); for UDP also Jitter and Lost/Total."
+echo "Record: Mbits/sec on the receiver line (goodput); for TCP, Retr on the sender line (retransmissions); for UDP also Jitter and Lost/Total."

@@ -1,5 +1,5 @@
-# Case 02 - FENCING: NOT TESTED. Client baremetal iDRAC design only.
-# Dedicated project for the recovery VM. Do NOT apply if the namespace exists
+# Case 02 - review and fill local values before use.
+# Project for the test VM. Do NOT apply if the namespace exists
 # or is owned by someone else; reuse only with the administrator's approval.
 # This namespace will hold the approved PVC: never delete it to "clean up".
 apiVersion: v1

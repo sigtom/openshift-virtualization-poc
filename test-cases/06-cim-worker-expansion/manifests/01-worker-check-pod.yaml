@@ -1,0 +1,39 @@
+# Case 06 - review and fill local values before use.
+# Apply on the WORKLOAD cluster, only AFTER the new worker is Ready.
+# A small standard pause pod, pinned to the new worker by hostname, to
+# show the worker can run a simple workload. No custom code.
+#
+# BEFORE APPLYING replace:
+#   REPLACE_NEW_WORKER_NODE : exact Node name of the newly added worker
+# If your cluster mirrors images, change the image to the approved mirror path.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: new-worker-check
+  namespace: cim-expansion-check
+  labels:
+    cim-expansion-lab.example.com/case: "06"
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: REPLACE_NEW_WORKER_NODE
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: capacity-check
+      # The image runs as UID 65535 when admission does not assign a UID.
+      image: registry.k8s.io/pause:3.10
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi

@@ -1,0 +1,10 @@
+# Case 06 - review and fill local values before use.
+# Apply on the WORKLOAD cluster (not the hub). Project for the small check
+# workload that proves the new worker can run pods. If this name exists,
+# choose an unused namespace name in both manifests before creating them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cim-expansion-check
+  labels:
+    cim-expansion-lab.example.com/case: "06"

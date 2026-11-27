@@ -1,10 +1,9 @@
 # Sources and applicability
 
-The provider, Secret, password-file update and cluster-admin procedures were checked against
-the OpenShift 4.21 and 4.22 documentation. Console provider setup, login, cluster-admin access
-and cleanup were exercised on 4.22. Standard file/Secret updates were verified separately on
-4.22 using temporary Secrets. There was no 4.21 runtime rehearsal. A documentation check is
-not an executed test.
+The procedures were checked against the OpenShift 4.21 and 4.22 documentation. Provider
+setup, the native password update, cluster-admin access, both fresh-login checks and cleanup
+were exercised on 4.22 with a temporary test account. Reusing an existing provider was not
+rehearsed. There was no 4.21 runtime rehearsal.
 
 | Topic | 4.21 | 4.22 |
 | --- | --- | --- |
@@ -14,6 +13,8 @@ not an executed test.
 
 The `htpasswd` options (`-B`, `-c`, `-D`, interactive prompt) are described in the
 [Apache htpasswd documentation](https://httpd.apache.org/docs/2.4/programs/htpasswd.html).
+The version check used when saving the Secret is standard Kubernetes optimistic concurrency
+([API concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)).
 
 Red Hat limits HTPasswd authentication to development environments; use an external
 identity provider for production. This procedure is for an approved demonstration.

@@ -1,6 +1,8 @@
-# Case 03 - NOT TESTED. OPTIONAL, ADMINISTRATOR ONLY. Use only if NO suitable dedicated
-# worker-only pool already exists (an existing, approved pool is always preferred).
-# Read MEMORY-DENSITY.md, "Pool selection", first.
+# Case 03 - NOT TESTED. OPTIONAL, ADMINISTRATOR ONLY. Use only if no approved pool already has
+# worker-only membership that is verified, exclusive and free of other users (MEMORY-DENSITY.md
+# Step 4). An existing approved pool is preferred, and nothing here is mandatory when the test
+# node is already isolated. Check the pool's actual membership (`oc get mcp`, node list), not
+# the worker label alone: mixed-role nodes exist.
 #
 # What a custom pool means: a MachineConfigPool picks nodes by label (nodeSelector) and picks
 # which MachineConfigs apply by role (machineConfigSelector). Listing BOTH `worker` and the new

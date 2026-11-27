@@ -7,7 +7,7 @@
 | 1 | Start a VM on an approved worker | VM-to-host rule |
 | 2 | Keep three VMs on different workers | VM anti-affinity |
 | 3 | Refuse a rule that no worker can satisfy | An impossible "must run" rule |
-| 4 — optional | Move a running VM yourself | Manual vMotion |
+| 4 | Move a running VM yourself | Manual vMotion |
 | 5 | Move a running VM automatically after a rule changes | Automated rule correction |
 
 ## Before you start
@@ -60,7 +60,7 @@ Replace the three worker names with the values agreed with your administrator. K
 <summary>Equivalent CLI and checks</summary>
 
 ~~~sh
-oc label node "$NODE_A" scheduling-lab.example.com/eligible=true
+oc label node "$NODE_A" scheduling-lab.example.com/eligible=true --overwrite
 oc patch vm placement-01 -n "$NS" --type=merge -p '{"spec":{"runStrategy":"Always"}}'
 oc wait vmi/placement-01 -n "$NS" --for=condition=Ready --timeout=10m
 oc get vmi placement-01 -n "$NS" -o wide
@@ -94,7 +94,7 @@ Before any migration, have the administrator confirm the guest agent, live-migra
 <summary>Equivalent CLI and checks</summary>
 
 ~~~sh
-oc label node "$NODE_A" "$NODE_B" "$NODE_C" scheduling-lab.example.com/spread-pool=true
+oc label node "$NODE_A" "$NODE_B" "$NODE_C" scheduling-lab.example.com/spread-pool=true --overwrite
 for vm in spread-01 spread-02 spread-03; do
   oc patch vm "$vm" -n "$NS" --type=merge -p '{"spec":{"runStrategy":"Always"}}'
 done
@@ -162,9 +162,9 @@ oc wait vmi/negative-01 -n "$NS" --for=delete --timeout=300s
 
 </details>
 
-## 4. Move a running VM yourself — optional
+## 4. Move a running VM yourself
 
-**What this shows:** a person can request live migration, similar to manual vMotion. This is separate from the automatic test.
+**What this shows:** a person can request live migration, similar to manual vMotion. This is separate from the automatic test in part 5. The full test needs both moves.
 
 **In the web console**
 
@@ -185,7 +185,7 @@ oc wait vmi/negative-01 -n "$NS" --for=delete --timeout=300s
 <summary>Equivalent CLI and checks</summary>
 
 ~~~sh
-oc label node "$NODE_B" scheduling-lab.example.com/eligible=true
+oc label node "$NODE_B" scheduling-lab.example.com/eligible=true --overwrite
 oc create -f actions/04-manual-migration.yaml
 oc get vmim -n "$NS"
 oc get vmi placement-01 -n "$NS" -o wide
@@ -203,11 +203,11 @@ This test is **rule correction**, not CPU-load balancing.
 
 ### A. Administrator prepares Predictive mode
 
-**Required handoff:** the administrator must complete [descheduler preparation and health checks](ADMIN-GUIDE.md#descheduler-prepare). This includes the original configuration snapshot, background evictions, priority isolation and generated-policy checks.
+Ask the administrator to complete [descheduler preparation](ADMIN-GUIDE.md#descheduler-prepare). They save the current settings and check that only the test VM can be moved.
 
 In the console, open **Ecosystem → Installed Operators** (called **Operators → Installed Operators** in some versions). Select project **openshift-kube-descheduler-operator**; enable **Show default projects** in the project selector if needed. Open **Kube Descheduler Operator → Kube Descheduler → cluster → YAML**. The mode should be **Predictive**. In this mode, it reports proposed moves and does not perform them.
 
-Do not continue until the administrator confirms the checkpoint passed. The [administrator CLI procedure](ADMIN-GUIDE.md#descheduler-prepare) provides the matching guarded commands.
+Continue when the administrator says ready. The [administrator guide](ADMIN-GUIDE.md#descheduler-prepare) has the matching commands.
 
 ### B. Record the running VM's identity
 
@@ -248,10 +248,12 @@ Read the VM's current **Node**; call it **SOURCE**. Choose the other worker as *
 
 | Did you perform test 4? | Expected SOURCE | TARGET |
 | --- | --- | --- |
-| Yes | Worker B | Worker A |
-| No | Worker A | Worker B |
+| Yes (normal) | Worker B | Worker A |
+| No (shortened run; test 4 is recorded **Not run**) | Worker A | Worker B |
 
 **In the web console**
+
+You make this label change; the administrator only checks it afterwards.
 
 1. Confirm TARGET has **scheduling-lab.example.com/eligible=true**. Add it first if absent.
 2. On SOURCE, open **Actions → Edit labels**. Click the **×** on **scheduling-lab.example.com/eligible=true**, then **Save**. Leave every other label unchanged.
@@ -264,17 +266,25 @@ Read the VM's current **Node**; call it **SOURCE**. Choose the other worker as *
 
 ~~~sh
 SOURCE=$(oc get vmi placement-01 -n "$NS" -o jsonpath='{.status.nodeName}')
-if [ "$SOURCE" = "$NODE_A" ]; then TARGET="$NODE_B"; else TARGET="$NODE_A"; fi
+case "$SOURCE" in
+  "$NODE_A") TARGET="$NODE_B" ;;
+  "$NODE_B") TARGET="$NODE_A" ;;
+  *) TARGET="" ;;
+esac
 printf 'SOURCE=%s TARGET=%s\n' "$SOURCE" "$TARGET"
 ~~~
 
-Compare these names with the table above. Stop if SOURCE is unexpected; do not change labels on another worker.
+Compare these names with the table above. If TARGET is empty or SOURCE is unexpected, stop and ask the administrator; do not change labels on another worker.
 
 ~~~sh
-oc label node "$TARGET" scheduling-lab.example.com/eligible=true --overwrite
-oc label node "$SOURCE" scheduling-lab.example.com/eligible-
+if [ -n "$TARGET" ]; then
+  oc label node "$TARGET" scheduling-lab.example.com/eligible=true --overwrite
+  oc label node "$SOURCE" scheduling-lab.example.com/eligible-
+fi
 oc get vmi placement-01 -n "$NS" -o wide
 ~~~
+
+Both label commands are safe to repeat: `--overwrite` sets the same value again, and removing a label that is already gone only prints a "not found" note.
 
 </details>
 
@@ -307,7 +317,7 @@ oc get vmim -n "$NS"
 
 **Required handoff:** immediately before enabling Automatic, the administrator repeats the [isolation and activation checks](ADMIN-GUIDE.md#activate). A clean check from earlier in the session is not enough.
 
-After confirmation, the administrator changes only **mode: Predictive → Automatic** in the cluster YAML, clicks **Save**, then **Reload**, and confirms **mode: Automatic**. The [guarded CLI alternative](ADMIN-GUIDE.md#activate) is also available.
+After confirmation, the administrator changes only **mode: Predictive → Automatic** in the cluster YAML, clicks **Save**, then **Reload**, and confirms **mode: Automatic**. If a console save does not stick after **Reload**, use the [administrator’s CLI steps](ADMIN-GUIDE.md#activate) for that change; the console remains the normal route.
 
 Watch placement-01. It should show **Migrating**, then **Running on TARGET**. In the migration list, a new cluster-created migration should reach **Succeeded**. Do not request a manual migration in this part of the test.
 
@@ -347,7 +357,7 @@ Reconnect to the guest Serial console using the dropdown in part B. A console re
 
 ![Repeat the guest boot-ID and uptime commands after migration](images/05-guest-after-automatic.png)
 
-**Pass when all are true:**
+**Test 5 passes when all are true** (the full case also needs test 4's requested migration):
 
 - The automatic migration succeeded and the VM is on TARGET.
 - The boot ID is unchanged and uptime increased.
@@ -382,4 +392,4 @@ The administrator must [restore the original shared configuration](ADMIN-GUIDE.m
 
 ![Five stopped VMs with their definitions retained](images/06-all-stopped.png)
 
-For recording, use the short [video outline](VIDEO-OUTLINE.md). For older numbered references in YAML comments, use the [administrator reference map](ADMIN-GUIDE.md#reference-map).
+For older numbered references in YAML comments, use the [administrator reference map](ADMIN-GUIDE.md#reference-map).

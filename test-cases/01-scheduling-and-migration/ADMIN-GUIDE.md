@@ -7,11 +7,11 @@ need to read the cluster inventory, operator configuration or cleanup commands.
 | When | What to do |
 | --- | --- |
 | Before the session | [Set session values](#session), run [preflight](#preflight), then [create the lab](#setup). |
-| Before customer test 5A | Complete [ownership, snapshot, Predictive configuration and health checks](#descheduler-prepare), sections 7.1–7.4. |
+| Before customer test 5A | Complete [owner check, snapshot, Predictive configuration and health checks](#descheduler-prepare), sections 7.1–7.4. |
 | Immediately before Automatic | Repeat [isolation checks and guarded activation](#activate). |
 | Immediately after migration or on timeout | Return to Predictive using section 7.6. |
 | After the session | [Restore the original shared settings](#restore). |
-| Another take / finished testing | [Reset and keep disks](#reset), or [remove the lab](#cleanup). |
+| Repeat the test / finished testing | [Reset and keep disks](#reset), or [remove the lab](#cleanup). |
 
 **Keep these boundaries:** use only the agreed nodes and exclusive lab namespace.
 Do not enable Automatic without a fresh priority/force-eviction inventory.
@@ -218,17 +218,20 @@ its UID equals the one recorded in an earlier run's evidence folder, and (for
 the namespace) a full inventory shows only lab objects:
 
 ```sh
-oc api-resources --verbs=list --namespaced -o name > "$LAB_EVIDENCE/ns-types.txt"
 fail=0
-while read -r r; do oc get "$r" -n $NS --ignore-not-found -o name || fail=1; done \
+oc api-resources --verbs=list --namespaced -o name > "$LAB_EVIDENCE/ns-types.txt" || fail=1
+[ -s "$LAB_EVIDENCE/ns-types.txt" ] || fail=1
+: > "$LAB_EVIDENCE/ns-inventory-errors.txt"
+while read -r r; do oc get "$r" -n $NS --ignore-not-found -o name 2>>"$LAB_EVIDENCE/ns-inventory-errors.txt" || fail=1; done \
   < "$LAB_EVIDENCE/ns-types.txt" > "$LAB_EVIDENCE/ns-inventory.txt"
 [ "$fail" = 0 ] && echo "inventory complete" || echo "INVENTORY INCOMPLETE - stop"
-cat "$LAB_EVIDENCE/ns-inventory.txt"
+cat "$LAB_EVIDENCE/ns-inventory-errors.txt" "$LAB_EVIDENCE/ns-inventory.txt"
 ```
 
-Errors are not hidden: any type that cannot be listed makes the inventory
-incomplete, and an incomplete inventory is a stop (have a cluster admin run
-it). Allowed content: the five VMs and their VMIs, launcher/CDI pods,
+The inventory passes only if the list of resource types itself was read and is
+not empty, and every type could be listed. Each failed type's error is kept in
+`ns-inventory-errors.txt` and shown. An incomplete inventory is a stop (have a
+cluster admin run it). Allowed content: the five VMs and their VMIs, launcher/CDI pods,
 DataVolumes, PVCs, migrations, plus the namespace's automatic objects
 (default ServiceAccounts and their secrets, `kube-root-ca.crt` and
 `openshift-service-ca.crt`, default RoleBindings). VM-owned ControllerRevisions and events from these test resources are also expected.
@@ -388,7 +391,7 @@ oc get vm -n $NS
 
 Existing disks do not change when you edit a VM template. Do not try to convert
 a bound PVC in place. Keep suitable existing VMs unchanged. If a disposable test
-VM needs a different disk, use the ownership-checked cleanup procedure and
+VM needs a different disk, use the UID-checked cleanup procedure and
 create a new disk after preserving anything needed.
 
 ### 2.4 Wait for the root-disk clones
@@ -451,7 +454,7 @@ oc wait dv/placement-01-rootdisk -n "$NS" --for=condition=Ready --timeout=30m
 ## 3–6. Customer tests
 
 Return to the [customer walkthrough](RUNBOOK.md) for placement, spreading,
-the impossible rule and optional manual migration. Keep the administrator
+the impossible rule and the requested (manual) migration. Keep the administrator
 session below available for the descheduler checkpoints.
 
 After placement-01 starts, confirm its actual running state before migration:
@@ -481,7 +484,7 @@ eligible node.
 
 <a id="descheduler-prepare"></a>
 
-### 7.1 Ownership and writer pause
+### 7.1 Who else edits it, and pausing them
 
 ```sh
 oc get kubedescheduler cluster -n $DS_NS -o jsonpath='{.metadata.uid}{"\n"}{.metadata.annotations}{"\n"}{.metadata.labels}{"\n"}'
@@ -525,13 +528,14 @@ SOURCE=$(oc get vmi placement-01 -n "$NS" -o jsonpath='{.status.nodeName}')
 case "$SOURCE" in
   "$NODE_A") TARGET="$NODE_B" ;;
   "$NODE_B") TARGET="$NODE_A" ;;
-  *) echo "Unexpected source worker: stop before changing labels." >&2; exit 1 ;;
+  *) TARGET="" ;;
 esac
-test "$SOURCE" != "$TARGET" || exit 1
-printf 'SOURCE=%s TARGET=%s\n' "$SOURCE" "$TARGET"
+if [ -n "$SOURCE" ] && [ -n "$TARGET" ]; then printf 'SOURCE=%s TARGET=%s\n' "$SOURCE" "$TARGET"; else echo "STOP: unexpected source worker '$SOURCE'. Do not change labels."; fi
 ~~~
 
-Confirm the customer selected this same pair in test 5C. Both must be agreed
+On `STOP`, leave every label as it is and find out where the VM is running.
+The terminal stays open with its values. Confirm the customer will use this
+same pair in test 5C. Both must be agreed
 workers, Ready and with target capacity and CPU compatibility for migration.
 
 - placement-01 is Running and LiveMigratable.
@@ -548,6 +552,12 @@ Patch (skip if you created the object in 7.2):
 jq --arg rv "$RV0" '.[0].value = $rv' descheduler/05a-lab-predictive.patch.json > "$LAB_EVIDENCE/05a.json"
 oc patch kubedescheduler cluster -n $DS_NS --type=json --patch-file="$LAB_EVIDENCE/05a.json"
 ```
+
+The patch applies only if the object is still exactly the version saved in the
+7.2 snapshot. If it reports that the test failed, someone changed the object
+after the snapshot and nothing was written. Stop, find out who changed it, then
+take a fresh 7.2 snapshot (it is now the true original) and repeat 7.4. Never
+edit the guard to make it pass.
 
 Console alternative: in the `cluster` YAML editor set only these five fields,
 leaving everything else, and **Save** (the console refuses if the object
@@ -616,12 +626,13 @@ Expected - stop if any item fails:
 
 ### 7.5 Trigger and dry run
 
-1. Label TARGET first, then remove the label from SOURCE.
-   Console: Edit labels on TARGET (add), then SOURCE (remove). CLI:
+1. The customer changes the labels in walkthrough test 5C (TARGET gets the
+   label, then SOURCE loses it). Do not change them again here; only check:
    ```sh
-   oc label node "$TARGET" scheduling-lab.example.com/eligible=true
-   oc label node "$SOURCE" scheduling-lab.example.com/eligible-
+   oc get nodes -l scheduling-lab.example.com/eligible=true -o name
    ```
+   Expected: TARGET only. If SOURCE still has it or TARGET lacks it, ask the
+   customer to finish 5C. The 5C commands are safe to repeat.
 2. Watch at least two intervals:
    ```sh
    oc logs deploy/descheduler -n $DS_NS --since=5m | tee "$LAB_EVIDENCE/predictive-log.txt" \
@@ -671,10 +682,13 @@ oc rollout status deploy/descheduler -n $DS_NS --timeout=180s
 oc get deploy descheduler -n $DS_NS -o jsonpath='{.spec.template.spec.containers[0].args}{"\n"}'
 ```
 
-05b applies only if the resourceVersion is the one just read and all five
-fields are exactly the lab values (full `profileCustomizations` including the
-background flag and threshold). If it fails, stop and review with the owner;
-do not edit guards or guess server defaults. Console alternative: compare the
+05b applies only if the resourceVersion is the one read on the line just
+before it and all five fields are exactly the lab values (full
+`profileCustomizations` including the background flag and threshold). Read the
+version immediately before patching; do not reuse an older value. If the patch
+fails, nothing changed: re-read the object and compare the five fields. If they
+still match the lab values, run the block again once; otherwise stop and review
+with the owner. Do not edit guards or guess server defaults. Console alternative: compare the
 five fields with the 7.4 block first, then change only `mode` to `Automatic`.
 
 Expected: args no longer contain `--dry-run=true`. Changing mode replaces the
@@ -820,9 +834,9 @@ Contains cluster names and UIDs: keep out of the public repository.
 
 <a id="reset"></a>
 
-## 9. Reset between recording takes
+## 9. Reset between test runs
 
-Root disks are kept between takes (guest changes persist; boot_id changes on each start).
+Root disks are kept between runs (guest changes persist; boot_id changes on each start).
 
 1. Descheduler in Predictive (7.6 last block) or restored (7.9).
 2. Migrations: `oc get vmim -n $NS -o custom-columns=NAME:.metadata.name,VMI:.spec.vmiName,PHASE:.status.phase`.
@@ -897,7 +911,12 @@ Root disks are kept between takes (guest changes persist; boot_id changes on eac
    `inventory complete` and lists nothing but lab and automatic objects.
 5. PriorityClass - only if the UID matches and no pod uses it:
    ```sh
-   oc get pods -A -o json | jq -r --arg pc "$PC" '.items[] | select(.spec.priorityClassName == $pc) | "\(.metadata.namespace)/\(.metadata.name)"'   # expect empty
+   if oc get pods -A -o json > "$LAB_EVIDENCE/pods-before-pc-delete.json"; then
+     jq -r --arg pc "$PC" '.items[] | select(.spec.priorityClassName == $pc) | "\(.metadata.namespace)/\(.metadata.name)"' "$LAB_EVIDENCE/pods-before-pc-delete.json"   # expect empty
+   else echo "POD LIST FAILED - stop, do not delete the PriorityClass"; fi
+   ```
+   Continue only if the pod list succeeded and printed no pod. Then:
+   ```sh
    test "$(oc get priorityclass $PC -o jsonpath='{.metadata.uid}')" = "$(cut -d' ' -f1 "$LAB_EVIDENCE/priorityclass-uid.txt")" \
      && oc delete priorityclass $PC || echo "UID MISMATCH - not deleting"
    ```
@@ -939,7 +958,7 @@ Use this table to find the matching administrator section:
 | Earlier reference | Read now |
 | --- | --- |
 | 0 / 1 | Administrator session / preflight in this guide |
-| Namespace YAML comment “RUNBOOK 1.4” | Section **1.5** here: namespace/PriorityClass ownership. That older comment used the wrong subsection; 1.4 is node readiness. |
+| Namespace YAML comment “RUNBOOK 1.4” | Section **1.5** here: new namespace and PriorityClass checks. That older comment used the wrong subsection; 1.4 is node readiness. |
 | 2.2 / 2.3 / 2.4 | PriorityClass / VM creation / disk-clone checks in this guide |
 | 3 / 4 / 5 / 6 | Customer walkthrough tests 1 / 2 / 3 / 4 |
 | 7.1–7.9 | Descheduler checkpoints in this guide |

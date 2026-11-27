@@ -1,6 +1,7 @@
 #!/bin/bash
 # usage: poc-iperf-server start [first_port=5201] [count=4] | stop | status
 # One iperf3 listener per port so tests can run at the same time. Only listeners started here are stopped.
+# A new start is refused while listeners from an earlier start are still running.
 PIDS="${POC_STATE_DIR:-/var/tmp}/poc-iperf-server.pids"
 isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; }
 inrange() { isnum "$1" && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
@@ -34,7 +35,10 @@ case ${1:-} in
     IFACE=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
     BIND=${POC_BIND:-$(ip -4 -o addr show dev "$IFACE" 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')}
     case $BIND in ''|*[!0-9.]*) echo "Could not find this VM's IPv4 address. Set it: export POC_BIND=<guest address from poc-net-info>"; exit 2 ;; esac
-    prune
+    # Refuse to overlap an earlier start: old listeners must not count toward this request,
+    # and a failed start must stop only the listeners it just started.
+    n=$(live_count)
+    if [ "$n" -gt 0 ]; then echo "Refusing: $n listener(s) from an earlier start are still running. Run: poc-iperf-server stop, then start again."; exit 1; fi
     i=0
     while [ "$i" -lt "$count" ]; do
       p=$((first + i))

@@ -1,10 +1,8 @@
 # Test Case 35 - HTPasswd Provider
 
-> **Verification status.** Console provider setup, first login, `cluster-admin` access and
-> cleanup were exercised on OpenShift 4.22. The standard `htpasswd` and `oc` file/Secret
-> updates were verified separately on 4.22 using temporary Secrets. The 4.21 steps were
-> checked against documentation only. Managed password sources and existing production
-> identity providers remain unverified.
+> **Status.** Provider setup, the native password update, administrator access, both fresh-login
+> checks and cleanup were exercised on OpenShift 4.22 with a temporary test account.
+> The 4.21 steps were checked against documentation only. [Details](ADMIN-GUIDE.md#verification-notes).
 
 For teams asking: *how do we add a local login, make it a cluster administrator, and later
 change its password, without disturbing the logins we already have?* The case sets up (or
@@ -19,31 +17,23 @@ use an external identity provider.
 
 | Your role | Open this |
 | --- | --- |
-| Customer / participant | **[Start the walkthrough](RUNBOOK.md)** |
-| Cluster administrator | [Preparation, commands, rotation, cleanup](ADMIN-GUIDE.md#prepare) |
+| Everyone running the test | **[The walkthrough](RUNBOOK.md)**: readiness, add, grant, change password, clean up |
+| Cluster administrator | [Preparation and reference](ADMIN-GUIDE.md#prepare): inventory, path choice, recovery |
 | Everyone | [Record results](RESULTS-TEMPLATE.md) |
-
-## Four stages
-
-1. **Prepare:** the agreed user, inventory of existing providers and users, a second known-good admin session.
-2. **ONE quick readiness check.**
-3. **Perform and show results:** provider, user, `cluster-admin` binding, login, password rotation.
-4. **Stop and clean up:** remove only what the test created, or follow the separate keep-account path.
 
 ## How it works
 
-- The provider reads a **file of bcrypt hashes** stored in a Secret in `openshift-config`.
-  The Kubernetes `User` API never stores a password. Do not create a `User` object with a
-  password; the first successful login creates the `User` and `Identity` objects itself.
-- The console cannot generate bcrypt hashes. Use standard commands on a Linux jump host
-  (`oc`, `htpasswd` from RHEL `httpd-tools`, `base64`): retrieve the file from the Secret,
-  run `htpasswd -B` (add or rotate, with a password prompt) or `htpasswd -D` (remove),
-  then replace the Secret with `oc create secret generic ... --dry-run=client -o yaml | oc replace -f -`.
-  This is for a dedicated, unmanaged HTPasswd-only Secret; if GitOps or an operator owns it, or
-  it holds other data to preserve, its owner updates the owning source. See the
-  [administrator guide](ADMIN-GUIDE.md#user).
-- `cluster-admin` is a cluster role. Granting it uses a ClusterRoleBinding and gives the
-  agreed user full control of the cluster.
+- The provider reads a **password file** (bcrypt hashes) stored in a Secret in
+  `openshift-config`. The Kubernetes `User` object never stores a password. The first
+  successful login creates the `User` and `Identity` objects.
+- The console cannot make bcrypt hashes. The administrator uses standard Linux commands on a
+  jump host: `htpasswd -B` to add a user or set a password, `htpasswd -D` to remove one, and
+  `oc` with `jq` to read and save the Secret. The save keeps the Secret's other content and is
+  refused if someone changed the Secret in the meantime
+  ([details](ADMIN-GUIDE.md#secret-update)).
+- If GitOps or an operator manages the Secret, its owner changes the source instead.
+- `cluster-admin` is a cluster role. The test grants it with one named ClusterRoleBinding,
+  created new for this test and removed at cleanup only if it is still that same binding.
 
 ## Files
 
@@ -51,7 +41,7 @@ use an external identity provider.
 | --- | --- |
 | `templates/htpasswd-secret.template.yaml` | Placeholder-only Secret, for a genuinely new provider |
 | `templates/oauth-htpasswd-entry.snippet.yaml` | One provider entry to **append**; not an applicable manifest |
-| `templates/cluster-admin-binding.template.yaml` | ClusterRoleBinding to `cluster-admin` for one user |
+| `templates/cluster-admin-binding.template.yaml` | Named ClusterRoleBinding to `cluster-admin` for one user (create only) |
 | `REFERENCES.md` | Sources |
 
 ## Boundaries

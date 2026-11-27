@@ -1,0 +1,51 @@
+# Case 03 - OPTIONAL, ADMINISTRATOR ONLY. Same-project prepared image for memory fixtures.
+# Not verified on the PowerFlex path: an earlier rehearsal used NFS Filesystem/ReadWriteMany
+# storage, which does not qualify vxflexos/Block/ReadWriteMany. Confirm with the storage owner.
+#
+# Use only when a per-VM clone from another project is refused and no eligible DataSource already
+# exists in the target project. See ADMIN-GUIDE.md#memory-fixtures. Two resources, no Namespace.
+# Copy to a private folder outside the checkout, replace each whole REPLACE_* value, then:
+#     oc create -f FILE            (refuses existing objects; never use apply or replace)
+#
+#   REPLACE_TARGET_NAMESPACE   the memory test project (it must already exist)
+#   REPLACE_SOURCE_PVC         PVC of the approved image; it must be STOPPED/cold, never in use
+#   REPLACE_SOURCE_PROJECT     namespace of that source PVC
+#   REPLACE_IMAGE_SIZE         at least the source PVC size, for example 40Gi
+#
+# Match REPLACE_SOURCE_PVC to the PVC behind the approved DataSource (its spec.source.pvc),
+# not a guess. Never stop an unrelated running VM just to copy its disk.
+# Created objects are yours: record name, namespace and metadata.uid. Delete only these two,
+# after the VMs that use them are gone. Never delete the original image.
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: prepared-memory-tools
+  namespace: REPLACE_TARGET_NAMESPACE
+  labels:
+    perf-lab.example.com/case: "03-memory"
+spec:
+  source:
+    pvc:
+      name: REPLACE_SOURCE_PVC
+      namespace: REPLACE_SOURCE_PROJECT
+  storage:
+    storageClassName: vxflexos
+    accessModes:
+      - ReadWriteMany
+    volumeMode: Block
+    resources:
+      requests:
+        storage: REPLACE_IMAGE_SIZE
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataSource
+metadata:
+  name: prepared-memory-tools
+  namespace: REPLACE_TARGET_NAMESPACE
+  labels:
+    perf-lab.example.com/case: "03-memory"
+spec:
+  source:
+    pvc:
+      name: prepared-memory-tools
+      namespace: REPLACE_TARGET_NAMESPACE

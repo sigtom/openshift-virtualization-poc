@@ -8,7 +8,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: poc-powerflex-observability
+  name: REPLACE_MONITOR_NAME           # a new, unused name; create with oc create, never apply
   namespace: REPLACE_CSM_NAMESPACE
   labels:
     perf-lab.example.com/case: "05"

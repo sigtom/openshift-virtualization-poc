@@ -1,0 +1,20 @@
+# Only if no existing unassigned inventory fits. Replace all REPLACE_* values.
+# Use an existing inventory namespace with its approved pull Secret.
+# Match osImageVersion to the workload cluster (the example uses 4.21).
+# This DHCP example does not configure bonds, VLANs or static addresses.
+apiVersion: agent-install.openshift.io/v1beta1
+kind: InfraEnv
+metadata:
+  name: REPLACE_NEW_INVENTORY_NAME
+  namespace: REPLACE_INVENTORY_NAMESPACE
+spec:
+  cpuArchitecture: x86_64
+  osImageVersion: "4.21"
+  agentApproval:
+    autoApprove: false
+  pullSecretRef:
+    name: REPLACE_EXISTING_PULL_SECRET_NAME
+  sshAuthorizedKey: REPLACE_SSH_PUBLIC_KEY
+  nmStateConfigLabelSelector:
+    matchLabels:
+      infraenvs.agent-install.openshift.io: REPLACE_NEW_INVENTORY_NAME

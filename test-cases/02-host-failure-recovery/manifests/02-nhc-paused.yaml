@@ -1,25 +1,23 @@
-# Case 02 - FENCING: NOT TESTED. Shipped PAUSED on purpose.
+# Case 02 - review and fill local values before use. Shipped PAUSED on purpose.
 #
-# pauseRequests stops NEW remediations only; in-flight ones keep running.
-# While paused, NHC (reference v0.12.0) reports observed/healthy 0/0 and also
-# skips cleanup of remediation objects for healthy nodes. Do not read health
-# counts while paused; check the nodes directly (ADMIN-GUIDE).
-# Remove the pause ONLY at RUNBOOK step 5, after ADMIN-GUIDE gates 1-7.
-# Verify activation gate 8 before introducing the fault.
+# SOURCE-ONLY SCOPE. The selector must match exactly ONE node: the approved
+# non-control-plane SOURCE worker that carries the dedicated label
+#   host-recovery-lab.example.com/source=case02
+# TARGET is a separate healthy virtualization host OUTSIDE this selector. Never
+# put the label on TARGET and never add TARGET to the FAR template.
 #
-# Selector: worker nodes only (never control plane) AND the explicit case pool
-# label. Exactly two nodes may carry the label (SOURCE and TARGET).
+# maxUnhealthy: 1 is mutually exclusive with minHealthy; do not add minHealthy.
+# It is only safe here because exactly one node is selected. Verify that
+# selection (RUNBOOK readiness check) before removing the pause.
+# Check the installed schema first: oc explain nodehealthcheck.spec
 #
-# minHealthy: 1 with a 2-node pool means "remediate while at least 1 pool node
-# is healthy" (N-1). A percentage such as 51% would round up to 2 and block
-# remediation. This is the documented adjustment for a 2-node pool.
+# pauseRequests stops NEW remediations only; in-flight ones keep running. While
+# paused, NHC reports observed/healthy 0/0 and skips cleanup of remediation
+# objects for healthy nodes, so do not read counts while paused.
+# Remove the pause ONLY at the RUNBOOK activation step. Once active, expect
+# observed=1 healthy=1 before the fault.
 #
-# unhealthyConditions: Ready False or Unknown for 300s (conservative, to avoid
-# fencing for a brief blip). Not a recovery-time promise.
-#
-# Before applying, confirm no other NodeHealthCheck, MachineHealthCheck or
-# auto-remediation selects these two nodes (ADMIN-GUIDE "Ownership check").
-# Check the installed schema: oc explain nodehealthcheck.spec
+# unhealthyConditions: Ready False or Unknown for 300s. Not a recovery-time promise.
 apiVersion: remediation.medik8s.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
@@ -29,7 +27,7 @@ metadata:
 spec:
   pauseRequests:
     - case02-setup-hold
-  minHealthy: 1
+  maxUnhealthy: 1
   selector:
     matchExpressions:
       - key: node-role.kubernetes.io/worker
@@ -38,7 +36,7 @@ spec:
         operator: DoesNotExist
       - key: node-role.kubernetes.io/master
         operator: DoesNotExist
-      - key: host-recovery-lab.example.com/pool
+      - key: host-recovery-lab.example.com/source
         operator: In
         values:
           - "case02"

@@ -8,7 +8,7 @@
 
 | Topic | OpenShift 4.21 (client) | OpenShift 4.22 | Applies as |
 | --- | --- | --- | --- |
-| Memory density, swap provisioning, HyperConverged (section *Configuring higher VM workload density*, 5.7 / 5.7.1) | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/postinstallation-configuration) | [4.22](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/postinstallation-configuration) | Memory phase of case 03 |
+| Memory density, swap provisioning, `wasp-agent`, HyperConverged (OpenShift **Virtualization** section *Configuring higher VM workload density*, 5.7 / 5.7.1) | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/postinstallation-configuration) | [4.22](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/postinstallation-configuration) | Memory phase of case 03 |
 | Networking: masquerade, port lists, Services, secondary networks | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/networking) | [4.22](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/networking) | Case 04 path and Service notes |
 | Monitoring and VM metrics | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/monitoring) | [4.22](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/monitoring) | Dashboards, metric names |
 | Managing VMs: consoles, guest agent, snapshots, migration | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/managing-vms) | [4.22](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/managing-vms) | Console access, guest checks |
@@ -16,11 +16,30 @@
 | Creating a VM (templates, boot sources, DataSources) | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/creating-a-virtual-machine) | [4.22 book: Creating virtual machines](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html-single/virtualization/index) | Path B VM shape |
 | Advanced VM creation (cloud-init, storage) | [4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/advanced-vm-creation) | [4.22 book: Creating virtual machines](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html-single/virtualization/index) | cloud-init limits, volumes |
 
+## Memory swap: which procedure to use
+
+- **Documented VM-specific path:** the OpenShift Virtualization section above (5.7 in the 4.21
+  and 4.22 books) describes memory density with the `wasp-agent` (DaemonSet in `openshift-cnv`)
+  and a swap procedure. Case 03 follows it.
+- **Intended use:** the 4.21 and 4.22 density section targets underused VM workloads, so
+  zero VM swap in a valid comparison is a measured result, not a defect.
+- **Which procedure to use:** follow *Configuring higher VM workload density* for your
+  installed OpenShift Virtualization release. Both 4.21 and 4.22 describe provisioning
+  worker swap and making it available to VMs through `wasp-agent`. The
+  [4.21 platform release notes](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/release_notes/ocp-4-21-release-notes)
+  separately record the removal of swap-memory configuration. This guide follows the
+  VM-specific procedure above; it does not assign a support or Technology Preview status.
+- The latest 4.22 rehearsal exercised the root-filesystem swap template, including
+  initial provisioning and activation after a later boot, then completed baseline,
+  loaded and recovery measurements with three repeats each. Host and test-VM swap use
+  stayed at zero. See [verification limits](README.md#walkthrough-verification).
+
+
 ## Key applicability differences
 
 | Area | 4.21 | 4.22 | What to do |
 | --- | --- | --- | --- |
-| HyperConverged API version | Documented against `hyperconvergeds.v1beta1.hco.kubevirt.io`, field `spec.higherWorkloadDensity.memoryOvercommitPercentage` | Documentation still targets `v1beta1`; the cluster may also serve `v1`, where the setting is under `spec.virtualization.higherWorkloadDensity` | Pin the API version in every `get`, `explain` and `patch` (MEMORY-DENSITY.md Step 2). Prefer the console setting |
+| HyperConverged API version | Documented against `hyperconvergeds.v1beta1.hco.kubevirt.io`, field `spec.higherWorkloadDensity.memoryOvercommitPercentage` | Documentation still targets `v1beta1`; the cluster may also serve `v1`, where the setting is under `spec.virtualization.higherWorkloadDensity` | Pin the API version in every `get`, `explain` and `patch` (MEMORY-DENSITY.md Step 0). Prefer the console setting |
 | Memory dashboard | Do not assume a dedicated memory-density dashboard exists | May exist; verify | Use VM **Metrics** and node dashboards; verify series |
 | Default masquerade networking | Guest sees an internal address; other pods reach the VM at the **pod IP**. Only ports listed on the interface are forwarded when a list exists | Same, verify | Use the pod IP; declare ports; a Service adds a forwarding step and is not comparable |
 | Guest agent | Needed for some console data; `Running` does not mean the guest is ready | Same | Check the agent and a console login before measuring |
@@ -32,6 +51,6 @@ Sizes, versions and wording must be checked against the installed release.
 ## Other primary sources
 
 - [sysbench](https://github.com/akopytov/sysbench): `sysbench cpu help`, `sysbench memory help`.
-- [stress-ng](https://github.com/ColinIanKing/stress-ng) and `man stress-ng`.
+- [stress-ng](https://github.com/ColinIanKing/stress-ng) and `man stress-ng` (`--vm-bytes`, `--vm-hang`, `--timeout`; verify `--vm-hang 0` on the installed build).
 - [iperf3 manual page](https://github.com/esnet/iperf/blob/master/src/iperf3.1): `-B`, `-R`, `-p`, `-u`, `-b`, `-t`, `-O`, `-i`.
 - [HammerDB documentation](https://www.hammerdb.com/docs/) (case 03, optional).

@@ -6,8 +6,8 @@
 > production capacity ratio is implied.
 
 
-The customer follows the [walkthrough](RUNBOOK.md). This guide holds everything
-complex: approvals, capacity maths, tools, isolation, metrics, memory gate, reset.
+Prepare the VMs, tools and monitoring here. Then use the [walkthrough](RUNBOOK.md)
+to run the test. The cleanup steps are at the end of this guide.
 
 <a id="prepare"></a>
 
@@ -19,7 +19,7 @@ complex: approvals, capacity maths, tools, isolation, metrics, memory gate, rese
 - [ ] Path B only: [tool image](#tools) built; [test host isolated](#isolate); [lab created](#create).
 - [ ] Capacity recorded and [competitor count](#capacity) derived and approved.
 - [ ] [Metrics](#metrics) queries verified against installed series.
-- [ ] [Memory gate](#memory-gate) ticked **or** memory phase marked Blocked.
+- [ ] [Memory prerequisites](#memory-gate) ticked **or** memory phase marked Blocked.
 - [ ] Optional [HammerDB](#hammerdb) ready.
 
 <a id="approvals"></a>
@@ -48,19 +48,20 @@ Overview**.
 
 ~~~sh
 oc get clusterversion version -o jsonpath='{.status.desired.version}{"\n"}'
-R=hyperconvergeds.v1beta1.hco.kubevirt.io   # pinned API version; see MEMORY-DENSITY.md Step 2
+R=hyperconvergeds.v1beta1.hco.kubevirt.io   # pinned API version; see MEMORY-DENSITY.md Step 0
 oc get $R kubevirt-hyperconverged -n openshift-cnv -o yaml > "$HOME/hco-before.yaml"   # private copy
 oc get $R kubevirt-hyperconverged -n openshift-cnv \
   -o jsonpath='cpuRatio={.spec.resourceRequirements.vmiCPUAllocationRatio}{"\n"}density={.spec.higherWorkloadDensity}{"\n"}'
 ~~~
 
-Record the installed values. **Read them; do not change them for this test.**
+Record both values here. Leave the CPU allocation ratio unchanged. Change memory
+density only through the approved [memory procedure](MEMORY-DENSITY.md).
 The CPU allocation ratio decides how little CPU request a vCPU creates, which
 is what lets the scheduler admit more vCPUs than cores. A memory-density
 setting, when present, decides how much the memory *request* is reduced
 relative to guest RAM. The resource is served in more than one API version and the
 field path depends on the version: use the version-pinned name above, and read
-[MEMORY-DENSITY.md](MEMORY-DENSITY.md) Step 2 before any change. Sources: [REFERENCES.md](REFERENCES.md).
+[MEMORY-DENSITY.md](MEMORY-DENSITY.md) Step 0 before any change. Sources: [REFERENCES.md](REFERENCES.md).
 
 Also record: nodes **Ready**, `rhel9` or equivalent boot source exists, the
 StorageClass (and its access modes and binding mode) to use.
@@ -98,9 +99,46 @@ resize VMs to reach a number: use fewer competitors, or Path B.
 
 | Missing | Smallest change | Disruption |
 | --- | --- | --- |
-| helper commands | Copy the files in `guest-tools/` into one folder as an ordinary guest user, for example `~/poc-bin`, make them executable and add that folder to `PATH` for the session (`export PATH="$HOME/poc-bin:$PATH"`). Typing the file contents with `cat > file` in the console works if copy is unavailable | Guest-only; **no VM restart**. Undo: remove only copied helper files |
+| helper commands | Copy `poc-sysbench`, `poc-load` and `poc-stats` from `guest-tools/` into `~/poc-bin` of the ordinary guest account (steps below). Write "helpers in `~/poc-bin`" on the sheet so participants set the path at each login | Guest-only; **no VM restart**. Undo: remove only the copied helper files |
 | sysbench / stress-ng | Install through the **owner's approved** package route | Guest-only install. Record what was installed; undo with the package manager |
 | console / guest access | Use access the owner already gives you; do not create new users or keys | none |
+
+**Copy the helpers into one guest** (as the ordinary guest user, in the VM's
+serial console). First make the folder:
+
+```sh
+mkdir -p ~/poc-bin
+ls ~/poc-bin
+```
+
+The list must not already contain `poc-sysbench`, `poc-load` or `poc-stats`. If it
+does, stop: they are someone else's files. Then, for each of the three files: type `cat > ~/poc-bin/poc-sysbench` (use the
+file's name), press **Enter**, paste that file's full contents from `guest-tools/`,
+press **Enter**, then **Ctrl+D**. If SSH access to the guest already exists, you can
+copy the files with `scp` instead; do not enable SSH just for this.
+
+**Optional jump-host copy:** if `virtctl` is already installed and `oc` is signed in,
+run the following from the repository folder. Replace `PROJECT`, `EXISTING_KEY`,
+`GUEST_USER` and `VM` with your existing access values. The VM must be Running.
+
+```sh
+mkdir -p ./poc-bin
+cp test-cases/03-cpu-memory-oversubscription/guest-tools/poc-* ./poc-bin/
+virtctl scp -n PROJECT -i ~/.ssh/EXISTING_KEY --recursive ./poc-bin GUEST_USER@vmi/VM:.
+```
+
+Repeat for each VM that needs the helpers. Then, **inside each guest**:
+
+```sh
+chmod 0755 ~/poc-bin/poc-sysbench ~/poc-bin/poc-load ~/poc-bin/poc-stats
+export PATH="$HOME/poc-bin:$PATH"
+command -v poc-sysbench poc-load poc-stats
+poc-stats
+```
+
+**Expected:** three paths under `~/poc-bin`, then a short CPU and memory summary.
+The `export` line lasts only for this login. Participants repeat it at every new
+login (walkthrough step 1).
 
 Never replace the VM's cloud-init, users or storage, never delete guest data, and
 do not restart workloads to add tools. Changes that need a **VM restart or
@@ -153,11 +191,17 @@ the helper commands. Put them in the approved image, as root during the image bu
 1. **Preferred: approved tool image.** Build one VM from the stock RHEL 9
    source using the client's authorized method (for example a temporary
    administrator-only cloud-init with an approved SSH public key, over a
-   subscription, Satellite or mirror the client permits). Install the tools,
-   run `cloud-init clean`, stop the VM, then publish its disk as a DataSource
-   (console: **Virtualization → Bootable volumes → Add volume**, or a
-   DataVolume cloned from its PVC). Put that DataSource's name and namespace
-   in the manifests. Delete the temporary administrator access afterwards.
+   subscription, Satellite or mirror the client permits). Install the tools.
+   **Before sealing**, if you added temporary access to the guest, remove it
+   inside the guest: delete the temporary key line from that user's
+   `~/.ssh/authorized_keys` (or delete the temporary user). Then run
+   `sudo cloud-init clean --logs`, stop the VM, and publish its disk as a
+   DataSource (console: **Virtualization → Bootable volumes → Add volume**, or
+   a DataVolume cloned from its PVC). Put that DataSource's name and namespace
+   in the manifests. Removing the cloud-init setting from the source VM later
+   does not change disks already copied from the image, so the cleanup must
+   happen inside the guest first. Check one new VM from the image has no
+   temporary key. If no temporary access was added, skip this.
    (Alternative to a baked image: copy the files into one guest at a time as in 3.3, using an
    existing root session the owner already approves; no secret reference is needed.)
 2. **Install in each guest** through the same authorized route, reviewed by the
@@ -172,12 +216,14 @@ Verify inside a test VM from the image (as the console user):
 
 ~~~sh
 sysbench --version; sysbench cpu help | head -5
-stress-ng --version; stress-ng --help | grep -E 'vm-keep|metrics-brief'
+stress-ng --version; stress-ng --help | grep -E 'vm-keep|vm-hang|metrics-brief'
 poc-stats         # present only after the VM was created from these manifests
 ~~~
 
 **Stop** if any is missing or the `--vm-keep` / `--metrics-brief` options are
-absent: the scripts use them. Competitor tools are bounded (`--timeout`,
+absent: the scripts use them. The memory phase also needs `--vm-hang`; its `0` value
+(hold until the timeout) must be verified on the installed build, see the
+[appendix](MEMORY-DENSITY.md#step-9-the-memory-ramp-administrator). Competitor tools are bounded (`--timeout`,
 memory capped at 70% of free), but a wrong tool build is still a risk.
 
 <a id="isolate"></a>
@@ -214,7 +260,7 @@ Record **for the test host** (not averages), before and after each phase:
 | vCPU allocated | sum of running VMs' sockets × cores × threads on this node | **Per host.** Competitor VMs here = 2 vCPU each |
 | vCPU : logical CPU, vCPU : physical core | allocated vCPU ÷ the two values above | Report both ratios |
 | Pod CPU / memory *requests* | **Node → Details → Allocated resources**, or `oc describe node N` | This is what the scheduler counts |
-| Guest configured RAM | sum of `domain.memory.guest` of running VMs | 4 GiB each here |
+| Guest configured RAM | sum of `domain.memory.guest` of running VMs | Use each VM’s actual size; memory fixtures can be larger |
 | Guest usable RAM, active working set | in guest `poc-stats`: MemTotal, MemAvailable; working set ≈ MemTotal − MemAvailable | |
 | Swap pressure | host swap-in/out rates (section 9) and guest `pswpin/pswpout` | |
 
@@ -251,21 +297,27 @@ measured, 30 GiB each competitor). After population, open each PVC and verify
 **Bound**, **vxflexos**, **Block**, and **ReadWriteMany**. Stop on unsupported
 storage or clone errors. This optional path does not require changing existing VMs.
 
-Apply in order, from the case directory (console alternative: **+ → Import
-YAML**):
+Fill private copies outside the checkout, then create them in order from the
+case directory (console alternative: **+ → Import YAML**). `oc create` refuses
+an object that already exists, so nothing existing is changed:
 
 ~~~sh
-oc apply -f manifests/00-namespace.yaml
-oc apply -f manifests/01-measured-vm.yaml
-oc apply -f manifests/02-competitor-vm-01.yaml -f manifests/02-competitor-vm-02.yaml
+P="$HOME/poc-private/case03"; mkdir -p "$P" && chmod 700 "$P"
+cp manifests/00-namespace.yaml manifests/01-measured-vm.yaml manifests/02-competitor-vm-0*.yaml "$P/"
+# fill REPLACE_* in the copies, then:
+oc create -f "$P/00-namespace.yaml"
+oc create -f "$P/01-measured-vm.yaml"
+oc create -f "$P/02-competitor-vm-01.yaml" -f "$P/02-competitor-vm-02.yaml"
 ~~~
+
+If a create reports *already exists*, stop: that object is not yours.
 
 Need more competitors? Each extra VM needs a **unique** name everywhere
 (VM, its DataVolume, hostname, `kubevirt.io/domain` and
 `perf-lab.example.com/vm` labels). Generate it so none is missed:
 
 ~~~sh
-bash scripts/render-competitor.sh 03 > /tmp/cpumem-load-03.yaml   # then replace REPLACE_*; repeat 04, 05…
+bash scripts/render-competitor.sh 03 > "$HOME/poc-private/case03/cpumem-load-03.yaml"   # then fill REPLACE_*; repeat 04, 05…
 ~~~
 
 The VM sizes (2 vCPU, 4 GiB) and the **absence** of an explicit memory request
@@ -359,14 +411,39 @@ and filter the other host series to that same instance. Never average all hosts.
 | Guest vCPU delay / I/O wait | `rate(kubevirt_vmi_vcpu_delay_seconds_total[1m])` measures scheduler delay/steal; `kubevirt_vmi_vcpu_wait_seconds_total` is I/O wait. Filter by VM and project. Scheduler statistics may be absent; do not change node kernel arguments for this test |
 | Guest steal and load | guest `poc-stats` (`cpu_steal_ticks`, `loadavg`) |
 | Scheduler CPU requests on node | `sum(kube_pod_container_resource_requests{resource="cpu",node="NODE"})` vs `kube_node_status_allocatable{resource="cpu",node="NODE"}` |
+| Assigned guest RAM (GiB) | `sum(kubevirt_vmi_memory_domain_bytes{namespace="PROJECT",node="NODE"}) / 1024^3` |
 | Host memory | `node_memory_MemTotal_bytes{instance="INSTANCE"}`, `node_memory_MemAvailable_bytes{instance="INSTANCE"}` |
+| Pod allocation headroom (bytes; stop before this approaches zero) | `max by(node)(kube_node_status_allocatable{resource="memory",node="NODE"}) - max by(node)(container_memory_working_set_bytes{node="NODE",id="/kubepods.slice"})` |
 | Host memory used estimate (%) | `100 * (1 - sum(node_memory_MemAvailable_bytes{instance="INSTANCE"}) / sum(node_memory_MemTotal_bytes{instance="INSTANCE"}))` |
 | Memory pressure | `rate(node_pressure_memory_waiting_seconds_total{instance="INSTANCE"}[1m])` (PSI only, as above) |
-| Host swap use and I/O | `node_memory_SwapTotal_bytes{instance="INSTANCE"}`, `node_memory_SwapFree_bytes{instance="INSTANCE"}`, `rate(node_vmstat_pswpin{instance="INSTANCE"}[1m])`, `rate(node_vmstat_pswpout{instance="INSTANCE"}[1m])` |
+| Host swap used (GiB) | `sum(node_memory_SwapTotal_bytes{instance="INSTANCE"} - node_memory_SwapFree_bytes{instance="INSTANCE"}) / 1024^3` |
+| Host swap provisioned/free and I/O (swap-in/out rates below are pages/sec) | `node_memory_SwapTotal_bytes{instance="INSTANCE"}`, `node_memory_SwapFree_bytes{instance="INSTANCE"}`, `rate(node_vmstat_pswpin{instance="INSTANCE"}[1m])`, `rate(node_vmstat_pswpout{instance="INSTANCE"}[1m])` |
 | Major faults, OOM | `rate(node_vmstat_pgmajfault{instance="INSTANCE"}[1m])`, `node_vmstat_oom_kill{instance="INSTANCE"}` |
 | Guest memory / swap | `kubevirt_vmi_memory_available_bytes`, `kubevirt_vmi_memory_usable_bytes`, `kubevirt_vmi_memory_swap_in_traffic_bytes`, `kubevirt_vmi_memory_swap_out_traffic_bytes` (guest swap, not host swap; inspect the exported type before calculating changes) |
 | Evictions, OOM kills | `kube_pod_status_reason{reason="Evicted"}`, `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}` |
 | Migrations | **Virtualization → Migrations / events**, or `oc get vmim -A`; metric prefix `kubevirt_vmi_migration` |
+
+<a id="assigned-memory"></a>
+
+To show the assigned RAM, open **Observe → Metrics**, select **All Projects**,
+paste the assigned-guest-RAM query with your project and node, and click **Run queries**.
+The result is in GiB. Compare it with the host’s installed physical RAM from the
+hardware inventory. The example shows 284 GiB assigned on a 256 GiB host (about 1.11:1);
+use your own sizes and approved ratio. Assigned RAM is different from memory currently used.
+
+![Assigned guest RAM rises from the measured VM alone to all six VMs; result 284 GiB](images/24-memory-assigned-total.png)
+
+The host graphs show a different measurement: RAM still available, and swap space used.
+Both examples below are in GiB. A valid zero is a result; an empty graph is missing data.
+
+![Reference Linux available RAM as the holds fill. This is not a stop floor; use kubelet pod-available memory for the stop check](images/25-memory-available-loaded.png)
+
+![Host swap use remains zero while the VMs are overcommitted](images/26-memory-swap-zero.png)
+
+The pod-headroom query was checked on 4.22. Verify both series on the installed version.
+Use kubelet's direct node and pod readings for the fast stop check
+([memory procedure, Step 8](MEMORY-DENSITY.md#step-8-verify-the-effective-request-qos-and-cgroup-swap-on-the-launcher)).
+Linux available RAM alone cannot show whether the pod allocation is full.
 
 A run with an unexpected **migration, eviction, OOM kill or restart** is
 invalid: record it, then repeat after the cause is understood.
@@ -382,45 +459,162 @@ windows.
 
 ![Host memory query; use the same test-node selector](images/08-host-memory.png)
 
-## 10. Memory gate (do not skip)
+## 10. Memory prerequisites (do not skip)
 
 The memory phase needs memory density **and** swap on the test worker. The full
-step-by-step procedure (check, prepare swap, enable in the console, verify, roll back)
-is in the **[memory density appendix](MEMORY-DENSITY.md)**. Do that, then tick.
-For orientation, in the newer console the **Memory density** control sits under **Virtualization → Settings → Cluster → General settings**
-(shown here switched off; do not change it outside the appendix):
+step-by-step procedure (pin the API, back up, isolate, approve swap storage, add swap, enable
+in the console, verify, ramp, restore) is in the **[memory density appendix](MEMORY-DENSITY.md)**.
+Follow it before completing the checklist. The latest 4.22 rehearsal completed all nine
+memory measurements; see [verification limits](README.md#walkthrough-verification).
+In the newer console the **Memory density** control sits under
+**Virtualization → Settings → Cluster → General settings** (shown here switched off; do not
+change it outside the appendix):
 
 ![Locate Memory density in the console settings; do not enable it during inspection](images/05-memory-settings.png)
 
+Record three things separately on the sheet (details in the appendix): *admission* (total running
+guest RAM above physical RAM, a measured ratio, not the HCO percentage), *VM paging* as
+Observed, Not observed or Blocked (zero swap with good metrics is Not observed, a valid
+result; Blocked means the feature or metrics are unavailable), and *workload performance*.
+Swap must be provisioned with a non-zero allowance; current swap use need not be above zero. Small RSS or guest-pressure checks are
+administrator-only; participants need only the one readiness line.
+
 - [ ] Memory density already on **(reused, unchanged)** *or* enabled by the appendix, with
-      the cluster owner's approval of its **cluster-wide** effect.
-- [ ] Swap present on the dedicated worker-only test pool (existing, or added by the
-      optional MachineConfig template on that pool only, never the generic worker pool).
-- [ ] Effective launcher-pod memory request of a competitor is **below** its guest RAM (appendix Step 7).
-- [ ] Original values saved privately and the restoration owner named.
+      the cluster owner's approval of its **cluster-wide** effect (HCO setting and `wasp-agent`).
+- [ ] The test node's real MachineConfigPool membership recorded (not the `worker` label
+      alone), worker-only, no control plane. An existing pool is used only if exclusive and approved.
+- [ ] Backing disk for `/var/tmp/swapfile` approved by the storage owner (fast root filesystem;
+      capacity plus headroom; no SD/removable media; no formatting or partitioning). Swap is
+      present, either reused or added by the optional MachineConfig for that pool only.
+- [ ] The new rendered MachineConfig and the node running it were confirmed, not just `Updated=True`.
+- [ ] Launcher pod of a VM started after density was enabled: actual QoS class, requests, reduced
+      guest-memory component, overhead, allocatable and cgroup swap allowance recorded (appendix Step 8).
+- [ ] `stress-ng --vm-hang 0` behaviour verified on the installed build (appendix Step 9), and
+      guest swap recorded as found (not changed on existing VMs).
+- [ ] Original values, taints, cordons and labels saved privately and the restoration owner named.
+- [ ] Guest sizes, hold bytes, hold durations (settle + all repeats + margin) and stop thresholds
+      written on the sheet by the approver.
 - [ ] Competitor count derived from node allocatable memory and **actual** admitted requests (section 6).
 
-If any box cannot be ticked (no worker-only pool, feature or schema missing,
-approval missing), the memory phase is **Blocked**: record it, run CPU only.
+If any box cannot be ticked (no worker-only node, feature or schema missing, no approved
+swap storage, approval missing), the memory phase is **Blocked**: record it, run CPU only.
 This case never selects control-plane nodes.
+
+<a id="memory-fixtures"></a>
+
+### Memory fixture VMs
+
+Prefer **existing eligible VMs, unchanged** (Path A rules); reuse one only if it is already
+eligible and running on the test node. Do not resize or move the CPU fixture. If no existing VM
+can hold the sheet's guest RAM, or the memory test needs another worker, create memory-only VMs
+from [`manifests/03-memory-fixture.template.yaml`](manifests/03-memory-fixture.template.yaml): a
+**different, new namespace** (create it once with `oc create namespace`; the template holds no
+Namespace), disks on `vxflexos` / Block / ReadWriteMany, `domain.memory.guest` only (no explicit
+memory request), `evictionStrategy: None`, and `stress-ng` in the image. Fill a private copy
+per VM, with whole placeholders replaced, and use `oc create` only. Record each created object's
+name and `metadata.uid`; cleanup (section 11) deletes only those.
+
+- **Placement.** During the test the node is cordoned. Only these new fixtures carry the explicit
+  `node.kubernetes.io/unschedulable` toleration plus the required `memory-host` label affinity, so
+  they alone bypass your test cordon. Existing VMs are unchanged. See
+  [Step 4](MEMORY-DENSITY.md#step-4-choose-and-isolate-the-node-no-control-plane).
+- **Image.** Prefer an already authorized prepared image. The VM names **both** the name and the
+  namespace of an existing DataSource.
+- **Own baseline.** Fixtures on a different worker than the CPU reference need their own memory
+  baseline, loaded and recovery runs on the same VM. Do not combine them with CPU results from
+  another VM.
+- **Power states per phase (new fixtures).** Create all of them Stopped. Baseline: only the
+  measured VM Running. Loaded: start only the competitors you own so all are Running before the
+  holds. Recovery: stop the new competitors to release their holds, keep the measured VM
+  Running, then stop it last as a review hold. Record which VMs run and the assigned ratio in each
+  phase on the sheet. Existing VMs (Path A) keep their power states as found; changing one needs
+  the owner's earlier agreement. See [MEMORY-DENSITY.md](MEMORY-DENSITY.md#step-9-the-memory-ramp-administrator).
+- **Ready before the window.** All new DataVolumes `Succeeded` and PVCs `Bound` before the memory window.
+
+**Optional: one prepared image in the memory project.** Try this before the per-VM workaround
+below, and only if an eligible unchanged VM or an already accessible approved DataSource does not
+solve it. Do not force a copy. As a cluster administrator, copy the approved image **once**
+into the memory project and let every fixture VM reference a DataSource in its own project:
+
+1. The source image PVC must be **stopped and cold**: an approved image, not a running VM's disk.
+   Never stop an unrelated running production VM just to copy it. If the approved DataSource
+   exists, use the PVC it points to (`oc get datasource NAME -n SOURCE_PROJECT -o jsonpath='{.spec.source.pvc}'`).
+2. In the console use **Import YAML** (the **+** button) in the memory project and paste a private copy of
+   [`manifests/00-prepared-memory-image.template.yaml`](manifests/00-prepared-memory-image.template.yaml)
+   with every `REPLACE_*` filled in; `oc create -f` is the CLI equivalent and refuses existing
+   objects. It holds a DataVolume and a DataSource named `prepared-memory-tools`.
+3. Wait for the DataVolume `Succeeded` and the DataSource `Ready`
+   (`oc get dv,datasource,pvc -n "$TEST_PROJECT"`). A console rehearsal of this path succeeded
+   without new Roles or role bindings, but on **NFS Filesystem/ReadWriteMany**; that does not
+   qualify the PowerFlex `vxflexos`/Block/ReadWriteMany path. Record what your storage did.
+4. In each fixture copy, set `REPLACE_SOURCE_NAME` to `prepared-memory-tools` and
+   `REPLACE_SOURCE_PROJECT` to the memory project.
+5. Record the added DataVolume, DataSource and PVC (name, namespace, `metadata.uid`) as yours.
+   At cleanup delete only those, after the new VMs are gone and the owner agrees. Never delete
+   the original image.
+
+![Reference prepared image: Succeeded, progress 100%, and Ready True](images/20-memory-prepared-image.png)
+
+Create the fixture VMs **Stopped**. Start them only after the worker and swap checks are complete.
+
+![Reference memory fixtures created and Stopped before the worker is ready](images/21-memory-fixtures-created.png)
+
+After the measured VM starts, copy the three helpers as in
+[Tools and access](#33-tools-and-access-smallest-reversible-change-first) unless
+its image already supplies them. Record their location on the sheet. Memory
+competitors need only `stress-ng`.
+
+**If the VM cannot create its disk (`Unauthorized` on the DataVolume).** A DataSource being
+`Ready` is not enough: the VM controller creates the disk as the **target** project's `default`
+service account, which may not be allowed to clone from the source namespace. Official
+cross-namespace cloning steps: OpenShift Virtualization
+[4.21](https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/virtualization/storage)
+and [4.22](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/storage)
+(*cloning a data volume into another namespace*); this procedure adds no Role framework.
+**Administrator only.** Do not create Roles or role bindings automatically and do not copy
+tokens. As a cluster administrator, check `oc auth can-i create datavolumes/source -n SOURCE_NAMESPACE`
+(expect `yes`), then create the VM's own matching standalone DataVolume yourself. Only for **your
+own new fixture** whose DataVolume and PVC do not exist yet; if either exists, stop and inspect it,
+and never delete, recreate or overwrite it. Use one private file per VM, never overwriting a saved one:
+
+~~~sh
+P="$HOME/poc-private/case03"; mkdir -p "$P" && chmod 700 "$P"
+VM=REPLACE_VM_NAME; TEST_PROJECT=REPLACE_NAMESPACE      # from the sheet
+oc get vm "$VM" -n "$TEST_PROJECT" -o json | jq '{apiVersion:"cdi.kubevirt.io/v1beta1",kind:"DataVolume",metadata:{name:.spec.dataVolumeTemplates[0].metadata.name,namespace:.metadata.namespace,ownerReferences:[{apiVersion:"kubevirt.io/v1",kind:"VirtualMachine",name:.metadata.name,uid:.metadata.uid,controller:true,blockOwnerDeletion:true}]},spec:.spec.dataVolumeTemplates[0].spec}' > "$P/$VM-disk.json"
+oc create -f "$P/$VM-disk.json"
+~~~
+
+The DataVolume then carries the VM as owner with the exact template name and spec. Wait for
+`oc get dv,pvc -n "$TEST_PROJECT"` to show `Succeeded` and `Bound`. Console equivalent: only if
+the installed console documents it; this guide does not claim one.
 
 <a id="reset"></a>
 
-## 11. Reset between takes and clean up
+## 11. Stop the load and clean up
 
-- **Between phases:** run `poc-load stop` inside each competitor, confirm
-  `poc-load status` reports `NOT running`, and leave existing VMs running.
-  Wait five minutes before the recovery baseline. Stop only optional new lab VMs
-  when doing an explicit reset, after stopping their loads. Record remaining
+- **Between phases:** for CPU load, run `poc-load stop` inside each competitor and confirm
+  `poc-load status` reports `NOT running`. Memory holds are separate foreground `stress-ng`
+  commands that `poc-load` cannot see. On existing VMs, let each hold finish or press **Ctrl+C**
+  and confirm the prompt returned. For new memory fixtures, stop only the competitor VMs
+  through **Actions → Control → Stop**; this ends their holds too. Keep the measured VM
+  Running. Confirm the memory is released before starting the recovery wait. Background
+  holds are stopped only as MEMORY-DENSITY.md Step 9 says. Leave existing VMs as found.
+  Wait five minutes after release and the planned competitor stops before measuring recovery.
+  Stop any remaining new fixtures only after their final measurements. Record remaining
   host swap usage; it does not necessarily drain automatically.
-- **Restore** memory density and swap using appendix Step 8 (drain first, then roll back) and verify against your private backup.
+- **Restore** memory density, swap and your node isolation using appendix Step 10 (headroom
+  gate first, then roll back) and verify against your private backup. Do not uncordon or
+  untaint anything you did not add. After the density restore, check that the `wasp-agent`
+  DaemonSet matches its controller's desired state; do not delete it by hand. Deleting the
+  swap MachineConfig leaves the swap file: remove only your own inactive file, as Step 10 says.
+- **Memory fixture (if created):** delete only the VMs, disks, any prepared-image DataVolume, DataSource and PVC (VMs first) and the namespace you created, after checking name and UID against the creation record, as for Path B below.
 - **Path A (existing VMs):** remove only the exact helper files you copied for this
   case. Keep any pre-existing tools and other files in `~/poc-bin`. Ask the owner
   before removing packages. Confirm VM sizes and placement still match the sheet.
 - **Path B (new VMs):** save results first. Use **Virtualization → VirtualMachines**,
   select project `perf-cpumem-lab`, and delete only the named VMs you created
   for this case. Check each name and UID against your private creation record
-  (**VM → YAML → metadata.uid**); a project label alone is not proof of ownership.
+  (**VM → YAML → metadata.uid**); a project label alone does not prove you created it.
   Delete associated disks only after the storage owner agrees. A `Retain` PV
   keeps its data after PVC deletion; report it rather than deleting the PV yourself.
 
@@ -438,6 +632,41 @@ resource types before deciding whether to remove it. Never use `--all` for clean
 Restore node labels to the values recorded before setup, using **Compute → Nodes →
 node → Actions → Edit labels**. Remove only labels this case added; preserve
 pre-existing labels. Undo only firewall/NetworkPolicy changes made for this test.
+
+<a id="stop-memory-hold"></a>
+
+### If Ctrl+C does not stop an existing VM's hold
+
+Keep the VM Running. Open another guest SSH session using the access already on the
+sheet. List your memory holds:
+
+```sh
+ps -u "$USER" -o pid,args | grep '[s]tress-ng --vm'
+```
+
+Find the parent command with the size and timeout you started. Check its PID matches
+the number printed when that hold started. Replace `PID` below with that number:
+
+```sh
+kill -TERM PID
+ps -p PID -o pid,args
+```
+
+Expected: the second command shows no process row. The foreground console returns
+to its prompt. Stop only your own hold; do not use `killall`. Confirm the memory is
+released before the recovery wait. For new disposable competitors, console **Stop**
+is the simpler option.
+
+### If the worker stops responding
+
+Stop the test and follow the abort steps in [the memory procedure](MEMORY-DENSITY.md#step-9-the-memory-ramp-administrator).
+Record the run as aborted. A benchmark after a worker restart cannot count as its recovery measurement.
+
+Historical troubleshooting images from earlier aborted attempts (not the normal participant path):
+
+![Earlier aborted attempt: VM paging was observed before the worker stopped responding. None means missing metrics, not zero. This is not a result from the latest rehearsal](images/16-memory-paging.png)
+
+![Earlier aborted run: Not Ready is a stop condition, even when VM paging was observed](images/17-memory-abort.png)
 
 <a id="sources"></a>
 

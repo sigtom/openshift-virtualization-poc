@@ -1,29 +1,23 @@
-# Case 03 - NOT TESTED. OPTIONAL, ADMINISTRATOR ONLY. Do not apply without MEMORY-DENSITY.md.
+# Case 03 - Administrator preparation only; read MEMORY-DENSITY.md first.
+# Root-filesystem swap was rehearsed on a worker-only pool on 4.22, including a later boot.
+# Verify the installed version and fill the approved pool role and size before use.
+# Based on the OpenShift Virtualization 4.21/4.22 documented WASP procedure.
+# Keeps its /var/tmp/swapfile path, kubelet drop-in and system-slice protection.
+# Differences: case-owned names, approved pool role/size, and ordering the existing-file
+# check before provisioning so both units cannot try to activate a newly created file.
 #
-# Source: Red Hat OpenShift Virtualization documentation, "Postinstallation configuration",
-# section "Configuring higher VM workload density", procedure for provisioning swap
-# (OpenShift 4.21 and 4.22 chapters; see ../REFERENCES.md). The ignition version, the kubelet
-# drop-in (path and contents), the unit conditions, commands and [Install] targets below follow
-# that sample. Not runtime-validated here: diff it against the page for the installed version
-# before use; if the page differs, the page wins.
+# Replace REPLACE_POOL_ROLE and REPLACE_SWAP_SIZE_MB (MiB) from the results sheet.
+# The pool must contain only approved worker-only nodes. Never target master.
+# Applying this drains and reboots every node in that pool.
 #
-# DELIBERATE DEVIATIONS from the documented sample (it targets the generic `worker` role):
-#   1. role: REPLACE_POOL_ROLE, a dedicated, approved, worker-only MachineConfigPool. The generic
-#      worker pool would swap-enable and REBOOT EVERY WORKER. Never use master or worker here.
-#   2. unique MachineConfig and unit names, so nothing shared is overwritten.
-#   3. REPLACE_SWAP_SIZE_MB sets the value from the agreed size instead of the sample's 5000.
+# Before applying: verify /var/tmp is on the node's approved fast root filesystem,
+# with enough free space for swap plus headroom. SD/removable boot media is not suitable.
+# A separate mount or alternate path needs its own reviewed procedure; this template does
+# not provision it. No existing disk is partitioned or formatted by this template.
 #
-# PREFLIGHT (MEMORY-DENSITY.md Step 4 stops on any collision):
-#   - no other MachineConfig already writes /etc/openshift/kubelet.conf.d/90-swap.conf
-#   - no other MachineConfig or unit uses /var/tmp/swapfile, and the file is absent on the nodes
-#   - the pool selects ONLY the intended worker-only nodes
-#
-# REPLACE before applying:
-#   REPLACE_POOL_ROLE  the role / pool name of the approved dedicated pool
-#   REPLACE_SWAP_SIZE_MB  node RAM * (memory overcommit percent / 100 - 1), in MB. Example: 16 GB at
-#                      150% = 8 GB = 8192. /var/tmp must have that much free space.
-#
-# Applying this reboots every node of the pool, one at a time (drain, reboot).
+# Stop if /var/tmp/swapfile, 90-swap.conf or any perf-swap-* unit already exists,
+# or another MachineConfig owns them. The drop-in's overwrite:true follows the vendor sample;
+# collision checks must establish there is no existing owner before applying it.
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -38,6 +32,8 @@ spec:
     storage:
       files:
         - path: /etc/openshift/kubelet.conf.d/90-swap.conf
+          mode: 420
+          overwrite: true
           contents:
             # Decodes to:  apiVersion: kubelet.config.k8s.io/v1beta1
             #              kind: KubeletConfiguration
@@ -45,20 +41,6 @@ spec:
             source: data:text/plain;charset=utf-8;base64,YXBpVmVyc2lvbjoga3ViZWxldC5jb25maWcuazhzLmlvL3YxYmV0YTEKa2luZDogS3ViZWxldENvbmZpZ3VyYXRpb24KZmFpbFN3YXBPbjogZmFsc2UK
     systemd:
       units:
-        - name: perf-swap-enable.service
-          enabled: true
-          contents: |
-            [Unit]
-            Description=Enable the existing swap file on later boots
-            ConditionFirstBoot=no
-            ConditionPathExists=/var/tmp/swapfile
-
-            [Service]
-            Type=oneshot
-            ExecStart=/bin/sh -c "sudo swapon /var/tmp/swapfile"
-
-            [Install]
-            RequiredBy=kubelet-dependencies.target
         - name: perf-swap-provision.service
           enabled: true
           contents: |
@@ -74,11 +56,27 @@ spec:
 
             [Install]
             RequiredBy=kubelet-dependencies.target
+        - name: perf-swap-enable.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Enable the existing swap file on later boots
+            Before=perf-swap-provision.service
+            ConditionFirstBoot=no
+            ConditionPathExists=/var/tmp/swapfile
+
+            [Service]
+            Type=oneshot
+            ExecStart=/bin/sh -c "sudo swapon /var/tmp/swapfile"
+
+            [Install]
+            RequiredBy=kubelet-dependencies.target
         - name: perf-swap-system-slice.service
           enabled: true
           contents: |
             [Unit]
             Description=Keep system services out of swap
+            ConditionFirstBoot=no
 
             [Service]
             Type=oneshot

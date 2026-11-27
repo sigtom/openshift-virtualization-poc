@@ -27,7 +27,7 @@ two VMs is repeated while **competitor flows** between other VM pairs add demand
 Layouts: same-host **control**, cross-host, or external server. Only a layout with a real
 shared physical bottleneck can show oversubscription; same-host cannot. Measured flow:
 `iperf3` TCP (forward and reverse) goodput and retransmits, separate ping RTT, and a
-bounded UDP flow for loss and jitter. Competitor flows use separate ports and VM pairs
+UDP flow at a fixed rate for loss and jitter. Competitor flows use separate ports and VM pairs
 and are added in agreed load levels. Proposal: 5 min warm-up, 15 min measure, 3 repeats.
 
 ## Files
@@ -62,6 +62,6 @@ Flow/listener counts were checked during the run and after cleanup. TCP received
 only a short connectivity check; the full TCP and reverse-direction measurements
 were **not run**.
 
-This verifies the bounded UDP procedure, **not** physical-link oversubscription or
+This verifies the fixed-rate UDP procedure, **not** physical-link oversubscription or
 a safe ratio. OpenShift 4.21 execution and new-VM provisioning on `vxflexos` /
 Block / RWX remain unverified. The screenshots are redacted reference output.
