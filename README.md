@@ -69,9 +69,10 @@ storage.
   held for review; an earlier rehearsal completed fixture cleanup. Alternate shared
   storage was used.
 - **Case 03:** CPU baseline, time-limited competing load, stop checks and recovery were
-  exercised. Actual CPU oversubscription was not established. Memory remains
-  **Blocked** until a dedicated worker-only pool and host swap are available; host
-  memory overcommit was not exercised.
+  exercised. Actual CPU oversubscription was not established. A bounded memory
+  rehearsal confirmed host and VM paging, then was aborted after exceeding a stop
+  limit and losing worker responsiveness. Loaded and recovery memory benchmarks
+  were not completed; no safe ratio is established.
 - **Case 04:** a bounded cross-host UDP baseline, competing traffic, stop checks and
   recovery were exercised. TCP had only a short connectivity check. Physical-link
   oversubscription and full TCP measurements remain unverified.
